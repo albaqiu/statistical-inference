@@ -1,4 +1,11 @@
+# RStudio project files
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+
+# macOS system files
+.DS_Store
+
+# Local data folder (if you add it)
+data/
