@@ -31,8 +31,7 @@ sum(duplicated(df$id))
 duplicated_ids <- df$id[duplicated(df$id)]
 unique(duplicated_ids)
 
-df[df$id %in% duplicated_ids, ] %>%
-  arrange(id) 
+#df[df$id %in% duplicated_ids, ] %>% arrange(id) 
 ```
 **Problem:** same information for all variables but different `countyId`. Since the variable `county` shows the same value for duplicated instances, `countyId` (5) will be removed due to the inconsistencies. If a numerical representation is needed, we will provide one. 
 
@@ -76,6 +75,8 @@ Based on the data summary, several variables were removed due to lack of informa
 - `hasBadGeocode` was dropped due to having only zero values.
 - `is_bankOwned` and `is_forAuction` were excluded due to extremely low variance (each has only one non-zero observation) making them uninformative and potentially noisy.
 - `livingAreaValue` and `buildingArea` are exact duplicates of `livingArea` and were removed to avoid redundancy.
+- `zipcode` will also be removed, as the information from the city is contained in other variables.
+- `latitude` and `longitude` variables do not provide relevant information for the modeling.
 
 
 ### 2.1.1. Target variable: Price
@@ -91,7 +92,11 @@ curve(dnorm(x, mean(df$price), sd(df$price)), add = T)
 ```
 As can be seen in the histogram, the target variable `Price` does not follow a normal distribution. The distribution of `Price` is **right-skewed**, with most values concentrated between approximately 100,000 and 600,000, and a peak around 300,000. This indicates that lower-priced properties are more common, while higher-priced ones are less frequent but still present.
 
-The skewness suggests the presence of **outliers** or **extreme values** on the higher end, which could affect modeling and should be considered during preprocessing. 
+```{r}
+# Normal distribution
+ks.test(df$price, "pnorm", mean(df$price), sd(df$price))
+```
+The Kolmogorov-Smirnov test was performed to assess whether the `price` variable follows a normal distribution. The test returned a p-value < 2.2e-16, which is highly significant. Therefore, we reject the null hypothesis of normality and conclude that price does not follow a normal distribution.
 
 ```{r}
 v <- df$price
@@ -103,7 +108,7 @@ summary(v)
 hist(v, breaks = 30, freq = FALSE, main = "Histogram of Price", xlab = "varname")
 curve(dnorm(x, mean(v, na.rm=TRUE), sd(v, na.rm=TRUE)), add = TRUE, col = "red")
 ```
-
+The skewness suggests the presence of **outliers** or **extreme values** on the higher end, which could affect modeling and should be considered during preprocessing. 
 
 ```{r}
 # Outliers
@@ -602,6 +607,7 @@ We evaluate the number of unique values in the strings to unify them.
 ```{r}
 unique(df$levels)
 ```
+
 ```{r}
 # Standardize text
 df$levels <- tolower(df$levels) #Normalize capitalization and remove extra spaces
@@ -618,6 +624,10 @@ df$levels[df$levels %in% c(
   "one-one and one half",
   "one-one and one half-two"
 )] <- "one"
+
+df$levels[df$levels %in% c(
+  "0"
+)] <- "zero"
 
 df$levels[df$levels %in% c(
   "one and one half",
@@ -658,19 +668,85 @@ df$levels[df$levels %in% c(
 
 df$levels[df$levels %in% c(
   "manufactured home 1 story",
-  "mobile home 1 story"
-)] <- "manufactured"
-
-df$levels[df$levels %in% c(
-  "0",
+  "mobile home 1 story",
   "other-see remarks"
 )] <- "other"
 
 # Convert to factor
 df$levels <- factor(df$levels,
                     levels = c("one", "one and one half", "two", 
-                               "three or more", "multi/split", 
-                               "manufactured", "other"))
+                               "three or more", "multi/split", "other", "zero"))
+
+# Check the result
+table(df$levels)
+barplot(table(df$levels), main = "Cleaned Levels", col = "lightpink", las = 2)
+```
+To simplify the levels variable further, the "one and one half" category was reassigned based on its similarity in average price to other groups. After comparing mean prices across levels, it was grouped with "two" to reduce sparsity and improve model interpretability. The same happens with "zero", which was grouped with "one".
+
+```{r}
+boxplot(price ~ levels, data = df,
+        main = "Price by Level",
+        col = "lightblue",
+        las = 2)
+```
+```{r}
+# Group similar values
+df$levels[df$levels %in% c(
+  "0",
+  "one",
+  "one-other",
+  "one-manufactured home 1 story",
+  "one-mobile home 1 story",
+  "one-two story foyer",
+  "one-two",
+  "one-one and one half",
+  "one-one and one half-two"
+)] <- "one"
+
+df$levels[df$levels %in% c(
+  "one and one half",
+  "one and one half-split level",
+  "one and one half-multi/split",
+  "1.5 story",
+  "one and one half-two",
+  "two",
+  "two-split foyer",
+  "two-split level",
+  "two-two story foyer",
+  "two-foyer - 2 story",
+  "two-three or more",
+  "multi/split-two"
+)] <- "two"
+
+df$levels[df$levels %in% c(
+  "three or more",
+  "three or more-two story foyer",
+  "3 story",
+  "two-three or more",
+  "2.5 story"
+)] <- "three or more"
+
+df$levels[df$levels %in% c(
+  "multi/split",
+  "multi/split-split level",
+  "split level",
+  "split foyer",
+  "tri level",
+  "tri-level",
+  "tri level-split level",
+  "three or more-split level-tri-level"
+)] <- "multi/split"
+
+df$levels[df$levels %in% c(
+  "manufactured home 1 story",
+  "mobile home 1 story",
+  "other-see remarks"
+)] <- "other"
+
+# Convert to factor
+df$levels <- factor(df$levels,
+                    levels = c("one", "two", 
+                               "three or more", "multi/split", "other"))
 
 # Check the result
 table(df$levels)
