@@ -18,34 +18,38 @@ rm(list=ls())
 # Loading data
 df <- read.csv("RealEstate_Georgia.csv", header=T)
 
-# Converting the data column to numeric
+# Convert date column to Date format (YYYY-MM-DD) and extract the year as numeric
 df$datePostedString <- as.Date(df$datePostedString, format = "%Y-%m-%d")
 df$datePostedString <- as.numeric(format(df$datePostedString, format = "%Y"))
 
+# Count rows where year is 2021 and only keep these
 length(df[which(df$datePostedString == 2021),]$datePostedString)
 df <- df[which(df$datePostedString == 2021),]
 
 # Duplicate quick inspection
-dup_rows <- duplicated(df$id) | duplicated(df$id, fromLast = TRUE)
-dups_df  <- df[dup_rows, ][order(df$id[dup_rows]), ]
-head(dups_df, 20)
+dup_rows <- duplicated(df$id) | duplicated(df$id, fromLast = TRUE) # Identify duplicated IDs
+dups_df  <- df[dup_rows, ][order(df$id[dup_rows]), ] # Create a df with only duplicated rows, sorted by ID
+head(dups_df, 20) # Show first 20 duplicated entries
+
 ```
 **Problem:** 
-1) Same information for all variables but different `countyId`. Since the variable `county` shows the same value for duplicated instances, `countyId` (5) will be removed due to the inconsistencies. If a numerical representation is needed, we will provide one. 
+1) Some observations have the same information for all variables but different `countyId`. Since the variable `county` shows the same value for duplicated instances, `countyId` (5) will be removed due to the inconsistencies. If a numerical representation is needed, we will provide one. 
 
 ```{r}
-
-# Columns to compare (exclude ids and countyId) without dropping them from df
+# Columns to compare (exclude Ids and countyId) without dropping them from df
 cols_idx <- setdiff(seq_along(df), c(1:3, 5))
 
 ## Comparison by id (which columns differ between duplicates)
 by_id <- split(dups_df[, cols_idx, drop = FALSE], dups_df$id)
 
+# Group duplicates by `id` and compare the selected columns
 diffs_list <- lapply(by_id, function(sub) {
   difs <- vapply(sub, function(x) length(unique(x)) > 1, logical(1))
   names(difs)[difs]              # solo las columnas que cambian
 })
 
+
+# summary dataframe indicating differences by id
 summary_df <- data.frame(
   id       = names(diffs_list),
   n_diff   = lengths(diffs_list),
@@ -54,25 +58,37 @@ summary_df <- data.frame(
   stringsAsFactors = FALSE
 )
 
-table(summary_df$n_diff)                               # 0, 1, 2, 3...
-sort(table(summary_df$diff_vars), decreasing = TRUE)   # combos: "countyId", "countyId, price", etc.
+# Frequency of how many duplicates have 0, 1, 2, etc. differing variables
+table(summary_df$n_diff)
 
+# Frequency of variable combinations that differ (e.g., "countyId", "countyId, price")
+sort(table(summary_df$diff_vars), decreasing = TRUE)
 ```
 **Problem:** 
-Case 1) Same information for all variables but different `countyId` (None group): select one of the two duplicates.
-Case 2) Some observations have different information for some variables: check those carefully
+We manage the duplicates separating them in 2 categories.
+
+Case 1) Exact duplicates: duplicates with same information across all variables but different `countyId` (None group).
+    - Action: select one of the two duplicates.
+    
+Case 2) Conflicting duplicates: some duplicates have different information for some variables
+    - Action: check these carefully.
 
 ```{r}
-# Case 1
-ids_none <- summary_df$id[summary_df$diff_vars == "None"]
-keep_idx <- ifelse(df$id %in% ids_none, !duplicated(df$id), TRUE)
+# Case 1: Exact duplicates
+ids_none <- summary_df$id[summary_df$diff_vars == "None"] 
+# keep only the 1st ocurrence
+keep_idx <- ifelse(df$id %in% ids_none, !duplicated(df$id), TRUE) 
 df <- df[keep_idx, ]
+
+# check remaining duplicates among "None" group (should be 0)
 sum(duplicated(df$id) & df$id %in% ids_none)  
 
 ```
 ```{r}
-# Case 2
+# Case 2: Duplicates with differences (require inspection)
 summary_rest <- summary_df[summary_df$diff_vars != "None", ]
+
+# Frequency of each difference combination (e.g., "price", "time, price")
 sort(table(summary_rest$diff_vars), decreasing = TRUE)
 
 ## helper: function to see all rows for a given combination
@@ -85,13 +101,13 @@ see_comb <- function(combo_str) {
 # Example of use:
 see_comb("time, price, pricePerSquareFoot") 
 ```
-Function 'see_comb' allows us to watch the duplicates for the different combinations of differences they have (for example, observations with different description, different value for garageSpaces...)
+The helper function 'see_comb' allows us to watch the duplicates for the different combinations of differences they have (for example, observations with different description, different value for garageSpaces...)
 
-After analyzing all combinations of duplicates, the conclusions we have reached are the following:
+After analyzing all duplicate groups, the conclusions we have reached are as follows:
 
-  * Observations with different description: Since they have the same values for everything else, and the description is not a relevant variable, one of the two duplicates will be selected.
+  * Observations with different description: Since they have the same values for everything else, and the description is not a relevant variable, only one of the two duplicates will be retained.
   
-  * Observations with combinations of different time+event, time+price: Having checked all observations, it is confirmed that the duplicates correspond to price or event changes. The most recent observations are the ones to retain, since they contain the most recent information.
+  * Observations with combinations of different time+event, time+price: After checking all observations, it is confirmed that the duplicates correspond to price or event changes. The most recent observations are the ones to retain, since they contain the most recent information.
       ** One particular observation of this case also includes a modification in description, garageSpaces, hasGarage. Since the description hints that the Garage has been renovated to a basement, the most recent observation is also the one to include. 
   
   * One observation with different value for 'garageSpaces': since 'garage' has value 1 for both observations, we conclude the reliable description is the one where 'garageSpaces' is 1, not the one with value 0.
@@ -107,16 +123,15 @@ After analyzing all combinations of duplicates, the conclusions we have reached 
 ## - df  (already deduped for "None" cases)
 ## - summary_rest = subset of summary_df where diff_vars != "None"
 
-## ---- Identify ids by rule ----
+## ---- Identify ids by inconsistency type ----
 ids_desc_only    <- unique(summary_rest$id[summary_rest$diff_vars == "description"])
 ids_parking_only <- unique(summary_rest$id[summary_rest$diff_vars == "parking"])
 ids_gs_only      <- unique(summary_rest$id[summary_rest$diff_vars == "garageSpaces"])
 
-## Any combo that includes 'time' -> keep the row with the SMALLEST time (most recent)
+## IDs with any difference involving 'time' (e.g., time, price, event...) -> keep the row with the SMALLEST time (most recent)
 ids_with_time    <- unique(summary_rest$id[grepl("\\btime\\b", summary_rest$diff_vars)])
 
-
-keep_idx <- rep(TRUE, nrow(df))
+keep_idx <- rep(TRUE, nrow(df)) # Initialize vector to mark rows to keep
 
 ## Rule A: "parking" only -> drop ALL rows for those ids (cannot decide which one is correct)
 if (length(ids_parking_only)) {
@@ -197,62 +212,65 @@ summary(df$livingArea == df$livingAreaValue)
 summary(df$livingArea == df$buildingArea)
 ```
 
-Based on the data summary, several variables were removed due to lack of informational value or redundancy:
+Based on the data summary, several variables will be removed due to limited informational value or redundancy:
 
-- `X.1`, `X`, `id`, and `time` were excluded as they do not provide meaningful information for modeling.
-- `stateId`, `state`, `country`, `currency`, and `datePostedString` were removed because they contain no variability: all observations refer to properties in Georgia (USA), use USD, or fall within the same year.
-- `hasBadGeocode` was dropped due to having only zero values.
-- `is_bankOwned` and `is_forAuction` were excluded due to extremely low variance (each has only one non-zero observation) making them uninformative and potentially noisy.
-- `livingAreaValue` and `buildingArea` are exact duplicates of `livingArea` and were removed to avoid redundancy.
-- `zipcode` will also be removed, as the information from the city is contained in other variables.
-- `latitude` and `longitude` variables do not provide relevant information for the modeling.
-- `streetAddress` will be removed as every house contains a different street address. 
+- `X.1`, `X`, `id`, and `time` will be removed as they do not contribute meaningful information for modeling.
+
+- `stateId`, `state`, `country`, `currency`, and `datePostedString` ill be excluded because they show no variability; all records correspond to properties in Georgia (USA), are listed in USD, and fall within the same year.
+
+- `hasBadGeocode` will be removed since it contains the same values, all zero.
+
+- `is_bankOwned` and `is_forAuction` will be dropped due to extremely low variance (each contains only a single non-zero value), providing no practical value and potentially introducing noise.
+
+- `livingAreaValue` and `buildingArea` are exact duplicates of `livingArea`, so they will be removed to avoid redundancy.
+
+- `zipcode` will be excluded because location information is already captured by other variables (for example, city).
+
+- `latitude` and `longitude` will be removed, as geographic coordinates are not relevant for the modeling objectives.
+
+- `streetAddress` will also be removed, given that it uniquely identifies each property without offering generalizable information.
 
 
-### 2.1.1. Target variable: Price
-Price is a numerical variable representing the target of the analysis. The histogram reveals a right-skewed distribution. The variable contains no missing values, so imputation is not required. Outlier detection identified 561 mild outliers and 32 extreme outliers, on the higher end of the spectrum. 
+### 2.1.1. Target variable: `Price`
+The first variable to be analyzed is Price, as it is a numerical variable representing the target of the analysis. 
+
+The variable contains no missing values, so imputation is not required. Outlier detection identified 561 mild outliers and 32 extreme outliers, on the higher end of the spectrum. 
 
 ```{r}
 summary(df$price)
+sum(is.na(df$price))
 ```
 ```{r}
 # Histogram + Normal curve
 hist(df$price, breaks = 30, freq = F, main="Histogram of Price", col="cyan")
 curve(dnorm(x, mean(df$price), sd(df$price)), add = T)
 ```
-As can be seen in the histogram, the target variable `Price` does not follow a normal distribution. The distribution of `Price` is **right-skewed**, with most values concentrated between approximately 100,000 and 600,000, and a peak around 300,000. This indicates that lower-priced properties are more common, while higher-priced ones are less frequent but still present.
+As can be seen in the histogram, the target variable `Price` does not follow a normal distribution. The distribution of `Price` is right-skewed, with most values concentrated between approximately 100,000 and 600,000, and a peak around 300,000. This indicates that lower-priced properties are more common, while higher-priced ones are less frequent but still present.
+
+As the price increases, the frequency of observations declines progressively, and only a small number of properties exceed $1,000,000. This long right tail suggests the presence of high-value outliers, typical of luxury properties, we should take this into account as it could affect modeling.
+
+
+
+!!!!!!!!!!!!!!!!!As it is not normal, should we transform it? log transformation
+
 
 ```{r}
 # Normal distribution
 ks.test(df$price, "pnorm", mean(df$price), sd(df$price))
 ```
-The Kolmogorov-Smirnov test was performed to assess whether the `price` variable follows a normal distribution. The test returned a p-value < 2.2e-16, which is highly significant. Therefore, we reject the null hypothesis of normality and conclude that price does not follow a normal distribution.
+The Kolmogorov-Smirnov test was performed to confirm whether the `price` variable follows a normal distribution. The test returned a p-value < 2.2e-16, which is statistically significant. Therefore, we reject the null hypothesis of normality and conclude that price does not follow a normal distribution.
 
-```{r}
-v <- df$price
-
-# Summary statistics
-summary(v)
-
-# Histogram + Normal curve
-hist(v, breaks = 30, freq = FALSE, main = "Histogram of Price", xlab = "varname")
-curve(dnorm(x, mean(v, na.rm=TRUE), sd(v, na.rm=TRUE)), add = TRUE, col = "red")
-```
-The skewness suggests the presence of **outliers** or **extreme values** on the higher end, which could affect modeling and should be considered during preprocessing. 
-
+We examine the outliers using the Interquartile Range (IQR) method:
 ```{r}
 # Outliers
-# Find the threshold
 
-#UPPER LIMITS
+# Upper limits
 varout <- summary(df$price); varout
 iqr <- varout[5] - varout[2]; iqr # diff between IQR = Q3 - Q1
 umout <- varout[5] + 1.5*iqr; umout # upper limit to identify mild outliers
 usout <- varout[5] + 3*iqr; usout # upper limit to identify extreme outliers
 
-#LOWER LIMITS
-varout <- summary(df$price); varout
-
+# Lower limits
 lmout <- varout[5] - 1.5*iqr; umout # upper limit to identify mild outliers
 lsout <- varout[5] - 3*iqr; usout # upper limit to identify extreme outliers
 
@@ -260,341 +278,247 @@ boxplot(df$price, horizontal = T, id=list(labels=row.names(df), n=2))
 
 abline(v=umout,col="orange",lwd=2) # vertical line for mild outliers
 abline(v=usout,col="red",lwd=2.5) # vertical line for extreme outliers
-
 abline(v=lmout,col="orange",lwd=2) # vertical line for mild outliers
 abline(v=lsout,col="red",lwd=2.5) # vertical line for extreme outliers
 
-mild_outliers <- which(df$price < lmout | df$price > umout)
-extreme_outliers <- which(df$price < lsout | df$price > usout)
+mild_outliers_price <- which(df$price < lmout | df$price > umout)
+extreme_outliers_price <- which(df$price < lsout | df$price > usout)
 
-cat("Number of mild outliers:", length(mild_outliers), "\n")
-cat("Number of extreme outliers:", length(extreme_outliers), "\n")
-
+cat("Number of mild outliers:", length(mild_outliers_price), "\n")
+cat("Number of extreme outliers:", length(extreme_outliers_price), "\n")
 ```
+The price variable shows a substantial number of outliers, with 561 mild and 32 extreme cases, all located in the upper tail. These outliers might reflect the presence of high-value and luxury properties. Since these values carry meaningful market information, they will be retained. 
+
+!!!!!!!!!!!!!!!!!!!!???????However, due to their potential influence on model performance, a logarithmic transformation will be considered to reduce skewness and stabilize variance.
+
 
 ### 2.1.2. Numerical variables
 #### Variable `pricePerSquareFoot`
-
 ```{r}
-v <- df$pricePerSquareFoot
-
 # Summary statistics
-summary(v)
+summary(df$pricePerSquareFoot)
+sum(is.na(df$pricePerSquareFoot))
+
 
 # Histogram + Normal curve
-hist(v, breaks = 30, freq = FALSE, main = "Histogram of pricePerSquareFoot", xlab = "pricePerSquareFoot")
-curve(dnorm(x, mean(v, na.rm=TRUE), sd(v, na.rm=TRUE)), add = TRUE, col = "red")
+hist(df$pricePerSquareFoot, breaks = 30, freq = FALSE, main = "Histogram of pricePerSquareFoot", xlab = "pricePerSquareFoot")
+curve(dnorm(x, mean(df$pricePerSquareFoot, na.rm=TRUE), sd(df$pricePerSquareFoot, na.rm=TRUE)), add = TRUE, col = "red")
 ```
-
+After examining the distribution of `pricePerSquareFoot`, the maximum value is disproportionately higher than the median, indicating the presence of extreme values or potential outliers. To investigate this further, we apply the Interquartile Range (IQR) method to detect and evaluate these outliers.
 
 ```{r}
 # Outliers
-# Find the threshold
 
-#UPPER LIMITS
-varout <- summary(v); varout
+# Upper limits
+varout <- summary(df$pricePerSquareFoot); varout
 iqr <- varout[5] - varout[2]; iqr # diff between IQR = Q3 - Q1
 umout <- varout[5] + 1.5*iqr; umout # upper limit to identify mild outliers
 usout <- varout[5] + 3*iqr; usout # upper limit to identify extreme outliers
 
-#LOWER LIMITS
-varout <- summary(v); varout
-
+# Lower limits
 lmout <- varout[2] - 1.5*iqr; umout # upper limit to identify mild outliers
 lsout <- varout[2] - 3*iqr; usout # upper limit to identify extreme outliers
 
-Boxplot(v, id = list(labels = rownames(df), n = 1),
-        main = "Boxplot PricePerSquareFoot")
+boxplot(df$pricePerSquareFoot, horizontal = T, id = list(labels = rownames(df), n = 1), main = "Boxplot PricePerSquareFoot")
 
-abline(h=umout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=usout,col="red",lwd=2.5) # vertical line for extreme outliers
+abline(v=umout,col="orange",lwd=2) # vertical line for mild outliers
+abline(v=usout,col="red",lwd=2.5) # vertical line for extreme outliers
 
-abline(h=lmout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=lsout,col="red",lwd=2.5) # vertical line for extreme outliers
+abline(v=lmout,col="orange",lwd=2) # vertical line for mild outliers
+abline(v=lsout,col="red",lwd=2.5) # vertical line for extreme outliers
 
-mild_outliers <- which(v < lmout | v > umout)
-extreme_outliers <- which(v < lsout | v > usout)
+mild_outliers <- which(df$pricePerSquareFoot < lmout | df$pricePerSquareFoot > umout)
+extreme_outliers <- which(df$pricePerSquareFoot < lsout | df$pricePerSquareFoot > usout)
 
 cat("Number of mild outliers:", length(mild_outliers), "\n")
 cat("Number of extreme outliers:", length(extreme_outliers), "\n")
 ```
-Has one very extreme outlier: preliminary analysis without it.
+The variable `pricePerSquareFoot` presents a strong right-skew with a median around 153, while the maximum reaches an unusually extreme value (over 200,000). The IQR analysis detects 258 mild outliers and 51 extreme outliers, confirming the presence of several abnormally high observations. These values likely result from data entry errors or exceptional listings and will require treatment to prevent them from disproportionately influencing the model.
 
 
 ```{r}
 # Delete extreme outlier
 df <- df[df$pricePerSquareFoot != 205000, ]
-v <- df$pricePerSquareFoot
-summary(v)
+summary(df$pricePerSquareFoot)
 
 # Histogram + Normal curve
-hist(v, breaks = 30, freq = FALSE, main = "Histogram of pricePerSquareFoot", xlab = "pricePerSquareFoot")
-curve(dnorm(x, mean(v, na.rm=TRUE), sd(v, na.rm=TRUE)), add = TRUE, col = "red")
+hist(df$pricePerSquareFoot, breaks = 30, freq = FALSE, main = "Histogram of pricePerSquareFoot", xlab = "pricePerSquareFoot")
+curve(dnorm(x, mean(df$pricePerSquareFoot, na.rm=TRUE), sd(df$pricePerSquareFoot, na.rm=TRUE)), add = TRUE, col = "red")
 ```
+After removing the extreme outlier in 205000, the distribution of pricePerSquareFoot remains right-skewed but is now much more realistic and consistent, most observations fall between $100 and $200, with a median of 153 and a maximum around 1,143.
 
 ```{r}
 # Outliers
-# Find the threshold
 
-#UPPER LIMITS
-varout <- summary(v); varout
+#Upper limits
+varout <- summary(df$pricePerSquareFoot); varout
 iqr <- varout[5] - varout[2]; iqr # diff between IQR = Q3 - Q1
 umout <- varout[5] + 1.5*iqr; umout # upper limit to identify mild outliers
 usout <- varout[5] + 3*iqr; usout # upper limit to identify extreme outliers
 
-#LOWER LIMITS
-varout <- summary(v); varout
-
+# Lower limits
 lmout <- varout[2] - 1.5*iqr; umout # upper limit to identify mild outliers
 lsout <- varout[2] - 3*iqr; usout # upper limit to identify extreme outliers
 
-Boxplot(v, id = list(labels = rownames(df), n = 1),
-        main = "Boxplot PricePerSquareFoot")
+boxplot(df$pricePerSquareFoot, horizontal = T, id = list(labels = rownames(df), n = 1), main = "Boxplot of PricePerSquareFoot")
 
-abline(h=umout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=usout,col="red",lwd=2.5) # vertical line for extreme outliers
+abline(v=umout,col="orange",lwd=2) # vertical line for mild outliers
+abline(v=usout,col="red",lwd=2.5) # vertical line for extreme outliers
 
-abline(h=lmout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=lsout,col="red",lwd=2.5) # vertical line for extreme outliers
+abline(v=lmout,col="orange",lwd=2) # vertical line for mild outliers
+abline(v=lsout,col="red",lwd=2.5) # vertical line for extreme outliers
 
-mild_outliers <- which(v < lmout | v > umout)
-extreme_outliers <- which(v < lsout | v > usout)
+mild_outliers_psqft <- which(df$pricePerSquareFoot < lmout | df$pricePerSquareFoot > umout)
+extreme_outliers_psqft <- which(df$pricePerSquareFoot < lsout | df$pricePerSquareFoot > usout)
 
-cat("Number of mild outliers:", length(mild_outliers), "\n")
-cat("Number of extreme outliers:", length(extreme_outliers), "\n")
+cat("Number of mild outliers:", length(mild_outliers_psqft), "\n")
+cat("Number of extreme outliers:", length(extreme_outliers_psqft), "\n")
 ```
-**Observations:**
-- 2651: Probable mistake (price ~ 350k/psqft ~ 1100) comparing with similar prices
-- 4446, 5080: 2651: Very expensive houses (price and psqft) - maybe not representative?
-
 
 #### Variable `yearBuilt`
 
 ```{r}
-v <- df$yearBuilt
-
 # Summary statistics
-summary(v)
+summary(df$yearBuilt)
+sum(is.na(df$yearBuilt))
 
 # Histogram + Normal curve
-hist(v, breaks = 30, freq = FALSE, main = "Histogram of yearBuilt", xlab = "yearBuilt")
-curve(dnorm(x, mean(v, na.rm=TRUE), sd(v, na.rm=TRUE)), add = TRUE, col = "red")
+hist(df$yearBuilt, breaks = 30, freq = FALSE, main = "Histogram of yearBuilt", xlab = "yearBuilt")
+curve(dnorm(x, mean(df$yearBuilt, na.rm=TRUE), sd(df$yearBuilt, na.rm=TRUE)), add = TRUE, col = "red")
 ```
-One value (9999) which is NA --> Analysis without it. Cannot likely be imputated.
+9999 represents a NA, we remove it as the year built likely cannot be imputated.
 
 ```{r}
-df <- df[df$yearBuilt >= 1799 & df$yearBuilt <= 2025, ]
-v <- df$yearBuilt
-hist(v, breaks = 30, freq = FALSE, main = "Histogram of yearBuilt", xlab = "yearBuilt")
-curve(dnorm(x, mean(v, na.rm=TRUE), sd(v, na.rm=TRUE)), add = TRUE, col = "red")
+df <- df[df$yearBuilt >= 1700 & df$yearBuilt <= 2025, ] # we only keep in the df the years within a realistic range
+hist(df$yearBuilt, breaks = 30, freq = FALSE, main = "Histogram of yearBuilt", xlab = "yearBuilt")
+curve(dnorm(x, mean(df$yearBuilt, na.rm=TRUE), sd(df$yearBuilt, na.rm=TRUE)), add = TRUE, col = "red")
 ```
+The distribution of yearBuilt shows that most properties were constructed between 1950 and 2010, with a gradual increase in construction frequency over the decades and a peak around the early 2000s. Very few homes were built before 1900, indicating that such early values are rare and may represent historic properties.
 
 ```{r}
-v <- df$yearBuilt
-
 # Outliers
-# Find the threshold
 
-#UPPER LIMITS
-varout <- summary(v); varout
+# Upper limits
+varout <- summary(df$yearBuilt); varout
 iqr <- varout[5] - varout[2]; iqr # diff between IQR = Q3 - Q1
 umout <- varout[5] + 1.5*iqr; umout # upper limit to identify mild outliers
 usout <- varout[5] + 3*iqr; usout # upper limit to identify extreme outliers
 
-#LOWER LIMITS
-varout <- summary(v); varout
-
+# Lower limits
 lmout <- varout[2] - 1.5*iqr; umout # upper limit to identify mild outliers
 lsout <- varout[2] - 3*iqr; usout # upper limit to identify extreme outliers
 
-Boxplot(v, id = list(labels = rownames(df), n = 10),
-        main = "Boxplot yearBuilt")
+boxplot(df$yearBuilt, horizontal = T, id = list(labels = rownames(df), n = 10), main = "Boxplot yearBuilt")
 
-abline(h=umout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=usout,col="red",lwd=2.5) # vertical line for extreme outliers
-abline(h=lmout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=lsout,col="red",lwd=2.5) # vertical line for extreme outliers
+abline(v=umout,col="orange",lwd=2) # vertical line for mild outliers
+abline(v=usout,col="red",lwd=2.5) # vertical line for extreme outliers
+abline(v=lmout,col="orange",lwd=2) # vertical line for mild outliers
+abline(v=lsout,col="red",lwd=2.5) # vertical line for extreme outliers
 
-mild_outliers <- which(v < lmout | v > umout)
-extreme_outliers <- which(v < lsout | v > usout)
+mild_outliers_year <- which(df$yearBuilt < lmout | df$yearBuilt > umout)
+extreme_outliers_year <- which(df$yearBuilt < lsout | df$yearBuilt > usout)
 
-cat("Number of mild outliers:", length(mild_outliers), "\n")
-cat("Number of extreme outliers:", length(extreme_outliers), "\n")
+cat("Number of mild outliers:", length(mild_outliers_year), "\n")
+cat("Number of extreme outliers:", length(extreme_outliers_year), "\n")
 ```
-#### Variable `longitude`
-
-```{r}
-v <- df$longitude
-summary(v)
-```
-```{r}
-# Missing values
-sum(is.na(v))
-```
-
-```{r}
-# Histogram
-hist(v, breaks = 30, freq = F, main="Histogram of Longitude", xlab = "Longitude")
-curve(dnorm(x, mean(v, na.rm=TRUE), sd(v, na.rm=TRUE)), add = TRUE, col = "red")
-```
-```{r}
-# Outliers
-# Find the threshold
-varout <- summary(v); varout
-iqr <- varout[5] - varout[2]; iqr # diff between IQR = Q3 - Q1
-umout <- varout[5] + 1.5*iqr; umout # upper limit to identify mild outliers
-usout <- varout[5] + 3*iqr; usout # upper limit to identify extreme outliers
-lmout <- varout[5] - 1.5*iqr; umout # upper limit to identify mild outliers
-lsout <- varout[5] - 3*iqr; usout # upper limit to identify extreme outliers
-
-Boxplot(v, id = list(labels = rownames(df), n = 20),
-        main = "Boxplot longitude")
-abline(h=umout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=usout,col="red",lwd=2.5) # vertical line for extreme outliers
-abline(h=lmout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=lsout,col="red",lwd=2.5) # vertical line for extreme outliers
-
-mild_outliers <- which(v < lmout | v > umout)
-extreme_outliers <- which(v < lsout | v > usout)
-
-cat("Number of mild outliers:", length(mild_outliers), "\n")
-cat("Number of extreme outliers:", length(extreme_outliers), "\n")
-```
-
-#### Variable `latitude`
-```{r}
-v <- df$latitude
-summary(v)
-```
-```{r}
-# Missing values
-sum(is.na(v))
-```
-
-```{r}
-# Histogram
-hist(v, breaks = 30, freq = F, main="Histogram of Latitude", xlab = "Latitude")
-curve(dnorm(x, mean(v, na.rm=TRUE), sd(v, na.rm=TRUE)), add = TRUE, col = "red")
-```
-```{r}
-# Outliers
-# Find the threshold
-varout <- summary(v); varout
-iqr <- varout[5] - varout[2]; iqr # diff between IQR = Q3 - Q1
-umout <- varout[5] + 1.5*iqr; umout # upper limit to identify mild outliers
-usout <- varout[5] + 3*iqr; usout # upper limit to identify extreme outliers
-lmout <- varout[5] - 1.5*iqr; umout # upper limit to identify mild outliers
-lsout <- varout[5] - 3*iqr; usout # upper limit to identify extreme outliers
-
-Boxplot(v, id = list(labels = rownames(df), n = 10),
-        main = "Boxplot latitude")
-abline(h=umout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=usout,col="red",lwd=2.5) # vertical line for extreme outliers
-abline(h=lmout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=lsout,col="red",lwd=2.5) # vertical line for extreme outliers
-
-mild_outliers <- which(v < lmout | v > umout)
-extreme_outliers <- which(v < lsout | v > usout)
-
-cat("Number of mild outliers:", length(mild_outliers), "\n")
-cat("Number of extreme outliers:", length(extreme_outliers), "\n")
-```
-
+Although the IQR method identifies a set of mild and extreme outliers in yearBuilt, early construction years are possible, while very recent years reflect new constructions. Since these observations provide meaningful information about housing age, they are retained rather than removed or imputed.
 
 #### Variable `livingArea`
 
 ```{r}
-v <- df$livingArea
-summary(v)
-```
-```{r}
-# Missing values
-sum(is.na(v))
+summary(df$livingArea)
+sum(is.na(df$livingArea))
 ```
 
 ```{r}
 # Histogram
-hist(v, breaks = 30, freq = F, main="Histogram of livingArea", xlab = "livingArea")
-curve(dnorm(x, mean(v, na.rm=TRUE), sd(v, na.rm=TRUE)), add = TRUE, col = "red")
+hist(df$livingArea, breaks = 30, freq = F, main="Histogram of livingArea", xlab = "livingArea")
+curve(dnorm(x, mean(df$livingArea, na.rm=TRUE), sd(df$livingArea, na.rm=TRUE)), add = TRUE, col = "red")
 ```
 ```{r}
 # Outliers
-# Find the threshold
-varout <- summary(v); varout
+
+# Upper limits
+varout <- summary(df$livingArea); varout
 iqr <- varout[5] - varout[2]; iqr # diff between IQR = Q3 - Q1
 umout <- varout[5] + 1.5*iqr; umout # upper limit to identify mild outliers
 usout <- varout[5] + 3*iqr; usout # upper limit to identify extreme outliers
+
+# Lower limits
 lmout <- varout[5] - 1.5*iqr; umout # upper limit to identify mild outliers
 lsout <- varout[5] - 3*iqr; usout # upper limit to identify extreme outliers
 
-Boxplot(v, id = list(labels = rownames(df), n = 10),
-        main = "Boxplot livingArea")
-abline(h=umout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=usout,col="red",lwd=2.5) # vertical line for extreme outliers
-abline(h=lmout,col="orange",lwd=2) # vertical line for mild outliers
-abline(h=lsout,col="red",lwd=2.5) # vertical line for extreme outliers
+boxplot(df$livingArea, horizontal = T, id = list(labels = rownames(df), n = 10), main = "Boxplot of livingArea")
+abline(v=umout,col="orange",lwd=2) # vertical line for mild outliers
+abline(v=usout,col="red",lwd=2.5) # vertical line for extreme outliers
+abline(v=lmout,col="orange",lwd=2) # vertical line for mild outliers
+abline(v=lsout,col="red",lwd=2.5) # vertical line for extreme outliers
 
-mild_outliers <- which(v < lmout | v > umout)
-extreme_outliers <- which(v < lsout | v > usout)
+mild_outliers_area <- which(df$livingArea < lmout | df$livingArea > umout)
+extreme_outliers_area <- which(df$livingArea < lsout | df$livingArea > usout)
 
-cat("Number of mild outliers:", length(mild_outliers), "\n")
-cat("Number of extreme outliers:", length(extreme_outliers), "\n")
+cat("Number of mild outliers:", length(mild_outliers_area), "\n")
+cat("Number of extreme outliers:", length(extreme_outliers_area), "\n")
 ```
-Comparing with the mean price, the extreme outliers have reasonable price in comparison. So, we maintain the extreme outliers. 
+The livingArea variable shows a wide range of property sizes, with most homes falling between approximately 1,500 and 3,000 square feet. The IQR method identifies 247 mild outliers and 4 extreme outliers, which correspond to very large homes exceeding 5,000 sq ft. These values are likely not data errors but represent luxury properties with larger living spaces. Therefore, these outliers are retained, as they reflect meaningful variability in property size.
+
 
 #### Variable `bathrooms`: num
 Bathroom is a discrete numerical variable. 
 ```{r}
-v <- df$bathrooms
-summary(v)
-```
-
-```{r}
-# Missing values
+summary(df$bathrooms)
 sum(is.na(df$bathrooms))
 ```
+
 ```{r}
 # Histogram
 hist(df$bathrooms, breaks = 30, freq = F, main="Histogram of bathrooms", xlab = "bathrooms")
-curve(dnorm(x, mean(v, na.rm=TRUE), sd(v, na.rm=TRUE)), add = TRUE, col = "red")
+curve(dnorm(x, mean(df$bathrooms, na.rm=TRUE), sd(df$bathrooms, na.rm=TRUE)), add = TRUE, col = "red")
 ```
-As can be seen in the histogram, some observations have 0 bathrooms. Since a house cannot realistically have 0 bathrooms, these values are replaced with NA to indicate missing data and then imputed using the **MICE** algorithm. 
+As can be seen in the histogram, some observations have 0 bathrooms. Since a house cannot realistically have 0 bathrooms, these values are replaced with NA to indicate missing data and then later we will impute the variable using the **MICE** algorithm. 
 
 ```{r}
 # Replace impossible values (0 bathrooms) with NA
-v[v == 0] <- NA
-# Missing values
-sum(is.na(v))
+df$bathrooms[df$bathrooms == 0] <- NA
+# We check if it was applied correctly
+sum(is.na(df$bathrooms))
 ```
-
-After analyzing the advertisements of houses with 9 and 10 bathrooms, we can conclude that they are not outliers but the houses do have that many bathrooms. 
+After inspecting the advertisements for properties with 9 and 10 bathrooms, we confirmed that these values are accurate and correspond to luxury homes. Therefore, they are not treated as outliers, but retained as valid observations reflecting luxury properties in the dataset.
 
 
 ### 2.1.3. Categorical variables
 
 #### Variable `cityId`
 ```{r}
+df$cityId <- as.factor(df$cityId)
 summary(df$cityId)
 ```
-```{r}
-hist(df$cityId, breaks = 30, freq = F)
-curve(dnorm(x, mean(df$cityId), sd(df$cityId)), add = T)
-```
 
 
 ```{r}
-v <- df$cityId
-
 # Frequency table
-table(v)
+table(df$cityId)
 
 # Barplot
-barplot(table(v), main = "Barplot of varname", las = 2, col = "lightblue")
+barplot(table(df$cityId), main = "Barplot of cityId", las = 2, col = "lightblue")
 ```
 ```{r}
 print(sum(df$cityId == 0))
 ```
-!!!!!!!Variable `cityId` has 297 observations of value 0, also there are some cities that have more than 1 `cityId`, so the relation between `cityId` and `city` is not univocal. 
+Variable `cityId` has 297 observations of value 0. 
+
+```{r}
+# count unique cityIds per city
+library(dplyr)
+
+df %>%
+  group_by(city) %>%
+  summarise(n_cityId = n_distinct(cityId)) %>%
+  arrange(desc(n_cityId))
+
+```
+
+The cityId variable shows inconsistencies, with several cities associated with multiple different IDs (for example, Atlanta has 21 distinct codes). Since cityId is a redundant and unreliable encoding of the city information, it will be removed from the dataset. We can get this information with the variable city.
 
 
 #### Variable `event`
@@ -608,13 +532,29 @@ prop.table(table(df$event))
 # Barplot
 barplot(table(df$event), main = "Barplot of event", las = 2, col = "lightblue")
 ```
+Since event primarily indicates listing status and not intrinsic property characteristics, it may not contribute significantly to price prediction. It's strongly imbalanced and it could be removed or simplified to a binary indicator (active vs. sold).
+
+```{r}
+df$event_status <- as.character(df$event)
+
+df$event_status[df$event_status %in% c("Listed for sale", "Pending sale", "Price change", "Listing removed")] <- "Active"
+df$event_status[df$event_status == "Sold"] <- "Sold"
+df$event_status <- factor(df$event_status)
+table(df$event_status)
+
+```
+
+Although the event variable was simplified into “Active” and “Sold,” the “Sold” category represents less than 1% of the dataset (49 out of 5465 observations). 
+
+Due to this extreme imbalance and the fact that event status does not describe physical property characteristics, it is unlikely to provide meaningful predictive power and will therefore be removed from the modeling dataset.
+
 
 #### Variable `city`
 ```{r}
 df$city = factor(df$city)
 table(df$city)
 ```
-First, as we see duplicates we unify them into one level. For this, first we put every name to lowercase and then detect the unique levels. 
+First, we observed that some city names were duplicated due to abbreviations, spelling variations, or inconsistent capitalization. To correct this, we converted city names to lowercase and merged the following cases:
 
 Strange cases we observe:
 * Union Point - Union Pt
@@ -622,79 +562,73 @@ Strange cases we observe:
 * Avondale Est - Avondale Estates
 * Waverly - Waverly Hall
 
-Also, there are several cases of the same name with different capital letters, for example:
+Also, there are several cases of the same name with different capital letters:
 * La fayette - La Fayette
 * Rock spring - Rock Spring
 * Rocky Face - Rocky face
 * Talking Rock -  Talking rock
 * Trenton - TRENTON
 * Warner robins - Warner Robins
+* Blue Ridge - Blue ridge
+* Lagrange - LAGRANGE
+* Johns Creek - JOHNS CREEK
 
 ```{r}
-df$cityf <- tolower(trimws(df$city))
-df$cityf[df$cityf == "union pt"] <- "union point"
-df$cityf[df$cityf == "west pt"] <- "west point"
-df$cityf[df$cityf == "avondale est"] <- "avondale estates"
-df$cityf[df$cityf == "waverly hall"] <- "waverly"
-table(df$cityf)
-df$city <- as.factor(df$cityf) 
+# Convert to lowercase and trim
+df$city <- tolower(trimws(df$city))
+
+df$city[df$city %in% c("union pt")] <- "union point"
+df$city[df$city %in% c("west pt")] <- "west point"
+df$city[df$city %in% c("avondale est")] <- "avondale estates"
+df$city[df$city %in% c("waverly hall", "waverly")] <- "waverly hall"
+df$city[df$city %in% c("la fayette", "la fayette")] <- "la fayette"
+df$city[df$city %in% c("rock spring", "rock spring")] <- "rock spring"
+df$city[df$city %in% c("rocky face", "rocky face")] <- "rocky face"
+df$city[df$city %in% c("talking rock", "talking rock")] <- "talking rock"
+df$city[df$city %in% c("lagrange", "lagrange", "lagrange")] <- "lagrange"
+df$city[df$city %in% c("johns creek", "johns creek")] <- "johns creek"
+df$city[df$city %in% c("warner robins", "warner robins")] <- "warner robins"
+df$city[df$city %in% c("blue ridge", "blue ridge")] <- "blue ridge"
+
+df$city <- factor(df$city)
+table(df$city)
 ```
+After these corrections, each city is represented by a single standardized level.
 
 #### Variable `hasGarage`
 ```{r}
 df$hasGarage = factor(df$hasGarage)
 table(df$hasGarage)
-barplot(table(df$hasGarage), main = "Barplot of hasGarage", col="pink")
+prop.table(table(df$hasGarage))
+barplot(table(df$hasGarage), main = "Barplot of hasGarage", col="lightblue")
 sum(is.na(df$hasGarage))
 ```
+Most properties in the dataset (approximately 63%) have a garage, while the remaining 37% do not. Since garage availability may influence property price and desirability, this variable will be retained.
 
-#### Variable `bathrooms`: factor
-```{r}
-table(df$bathrooms)
-```
-
-```{r}
-summary(df$bathrooms)
-```
-```{r}
-df$bathrooms = factor(df$bathrooms)
-barplot(table(df$bathrooms), main = "Barplot of Bathrooms", col="orange")
-```
-As can be seen in the barplot, some observations have 0 bathrooms. Since a house cannot realistically have 0 bathrooms, these values are replaced with NA to indicate missing data. Missing values will be later imputed using MICE.  
-
-```{r}
-# Replace impossible values (0 bathrooms) with NA
-df$bathrooms[df$bathrooms == 0] <- NA
-barplot(table(df$bathrooms), main = "Barplot of Bathrooms", col="orange")
-sum(is.na(df$bathrooms))
-```
 
 #### Variable `parking`
 ```{r}
-v <- df$parking
-table(v)
+table(df$parking)
 ```
 ```{r}
-v = factor(v)
-barplot(table(v), main = "Barplot of Parking", col="orange")
+df$parking = factor(df$parking)
+barplot(table(df$parking), main = "Barplot of Parking", col="orange")
 ```
+Same as with hasGarage, the parking availability could affect the property price and desirability, thus, we maintain the variable.
 
 #### Variable `garageSpaces`
 ```{r}
-v <- df$garageSpaces
-table(v)
+table(df$garageSpaces)
 ```
 
 ```{r}
-summary(v)
-```
-```{r}
-v = factor(v)
-barplot(table(v), main = "Barplot of garageSpaces", col="orange")
+df$garageSpaces = factor(df$garageSpaces)
+barplot(table(df$garageSpaces), main = "Barplot of garageSpaces", col="orange")
 ```
 Since higher numbers of garageSpaces have fewer observations, we consider them as 1 level. 
 
 ```{r}
+df$garageSpaces <- as.character(df$garageSpaces)
 df$garageSpaces[df$garageSpaces>=3] <- "3 or more"
 df$garageSpaces <- as.factor(df$garageSpaces)
 table(df$garageSpaces)
@@ -714,82 +648,7 @@ We evaluate the number of unique values in the strings to unify them.
 ```{r}
 unique(df$levels)
 ```
-
-```{r}
-# Standardize text
-df$levels <- tolower(df$levels) #Normalize capitalization and remove extra spaces
-df$levels <- trimws(df$levels)
-
-# Group similar values
-df$levels[df$levels %in% c(
-  "one",
-  "one-other",
-  "one-manufactured home 1 story",
-  "one-mobile home 1 story",
-  "one-two story foyer",
-  "one-two",
-  "one-one and one half",
-  "one-one and one half-two",
-  "manufactured home 1 story",
-  "mobile home 1 story"
-)] <- "one"
-
-df$levels[df$levels %in% c(
-  "0"
-)] <- "zero"
-
-df$levels[df$levels %in% c(
-  "one and one half",
-  "one and one half-split level",
-  "one and one half-multi/split",
-  "1.5 story",
-  "one and one half-two"
-)] <- "one and one half"
-
-df$levels[df$levels %in% c(
-  "two",
-  "two-split foyer",
-  "two-split level",
-  "two-two story foyer",
-  "two-foyer - 2 story",
-  "two-three or more",
-  "multi/split-two"
-)] <- "two"
-
-df$levels[df$levels %in% c(
-  "three or more",
-  "three or more-two story foyer",
-  "3 story",
-  "two-three or more",
-  "2.5 story",
-  "tri level",
-  "tri-level",
-  "tri level-split level",
-  "three or more-split level-tri-level"
-)] <- "three or more"
-
-df$levels[df$levels %in% c(
-  "multi/split",
-  "multi/split-split level",
-  "split level",
-  "split foyer"
-)] <- "multi/split"
-
-df$levels[df$levels %in% c(
-  "other-see remarks"
-)] <- "other"
-
-# Convert to factor
-df$levels <- factor(df$levels,
-                    levels = c("one", "one and one half", "two", 
-                               "three or more", "multi/split", "other", "zero"))
-
-# Check the result
-table(df$levels)
-barplot(table(df$levels), main = "Cleaned Levels", col = "lightpink", las = 2)
-summary(df$levels)
-```
-To simplify the levels variable further, the "one and one half" category was reassigned based on its similarity in average price to other groups. After comparing mean prices across levels, it was grouped with "two" to reduce sparsity and improve model interpretability. The same happens with "zero", which was grouped with "one".
+To simplify the levels variable, some in between levels like the "one and one half" level was reassigned based on its similarity in average price to other groups. After comparing mean prices across levels, it was grouped with "two" to reduce sparsity and improve model interpretability. The same happens with "zero", which was grouped with "one".
 
 ```{r}
 boxplot(price ~ levels, data = df,
@@ -797,72 +656,57 @@ boxplot(price ~ levels, data = df,
         col = "lightblue",
         las = 2)
 ```
+
 ```{r}
-# Group similar values
-df$levels[df$levels %in% c(
-  "0",
-  "one",
-  "one-other",
-  "one-manufactured home 1 story",
-  "one-mobile home 1 story",
-  "one-two story foyer",
-  "one-two",
-  "one-one and one half",
-  "one-one and one half-two",
-  "manufactured home 1 story",
-  "mobile home 1 story"
-)] <- "one"
+# Standardize text formatting (lowercase + trim)
+df$levels <- tolower(trimws(df$levels))
 
-df$levels[df$levels %in% c(
-  "one and one half",
-  "one and one half-split level",
-  "one and one half-multi/split",
-  "1.5 story",
-  "one and one half-two",
-  "two",
-  "two-split foyer",
-  "two-split level",
-  "two-two story foyer",
-  "two-foyer - 2 story",
-  "two-three or more",
-  "multi/split-two"
-)] <- "two"
+# Define categories
+one_group <- c(
+  "0", "one", "one-other", "one-manufactured home 1 story",
+  "one-mobile home 1 story", "one-two story foyer", "one-two",
+  "one-one and one half", "one-one and one half-two",
+  "manufactured home 1 story", "mobile home 1 story"
+)
 
-df$levels[df$levels %in% c(
-  "three or more",
-  "three or more-two story foyer",
-  "3 story",
-  "two-three or more",
-  "2.5 story",
-  "tri level",
-  "tri-level",
-  "tri level-split level",
-  "three or more-split level-tri-level",
-  "multi/split",
-  "multi/split-split level",
-  "split level",
-  "split foyer"
-)] <- "three or more"
+two_group <- c(
+  "one and one half", "one and one half-split level",
+  "one and one half-multi/split", "1.5 story", "one and one half-two",
+  "two", "two-split foyer", "two-split level", "two-two story foyer",
+  "two-foyer - 2 story", "two-three or more", "multi/split-two",
+  "two-multi/split"
+)
 
-df$levels[df$levels == "other"] <- NA
+three_group <- c(
+  "three or more", "three or more-two story foyer",
+  "3 story", "2.5 story", "tri level", "tri-level",
+  "tri level-split level", "three or more-split level-tri-level",
+  "multi/split", "multi/split-split level",
+  "split level", "split foyer"
+)
 
-# Convert to factor
-df$levels <- factor(df$levels,
-                    levels = c("one", "two", 
-                               "three or more"))
+# Recode values
+df$levels[df$levels %in% one_group] <- "one"
+df$levels[df$levels %in% two_group] <- "two"
+df$levels[df$levels %in% three_group] <- "three or more"
 
-# Check the result
+# Handle remaining categories (other-see remarks)
+df$levels[!df$levels %in% c("one", "two", "three or more")] <- NA
+
+# convert to factor
+df$levels <- factor(df$levels, levels = c("one", "two", "three or more"))
+
+# Check result
 table(df$levels)
-barplot(table(df$levels), main = "Cleaned Levels", col = "lightpink", las = 2)
-sum(is.na(df$levels))
 summary(df$levels)
+
 ```
 
 #### Variable `pool`
 ```{r}
-df$pools = factor(df$pool)
+df$pool = factor(df$pool)
 table(df$pool)
-barplot(table(df$pool), main = "Barplot of pool", col="pink")
+barplot(table(df$pool), main = "Barplot of pool", col="lightblue")
 sum(is.na(df$pool))
 ```
 
@@ -870,7 +714,7 @@ sum(is.na(df$pool))
 ```{r}
 df$spa = factor(df$spa)
 table(df$spa)
-barplot(table(df$spa), main = "Barplot of pool", col="pink")
+barplot(table(df$spa), main = "Barplot of spa", col="lightblue")
 sum(is.na(df$spa))
 ```
 
@@ -878,44 +722,92 @@ sum(is.na(df$spa))
 ```{r}
 df$isNewConstruction = factor(df$isNewConstruction)
 table(df$isNewConstruction)
-barplot(table(df$isNewConstruction), main = "Barplot of isNewConstruction", col="pink")
+barplot(table(df$isNewConstruction), main = "Barplot of isNewConstruction", col="lightblue")
 sum(is.na(df$isNewConstruction))
 ```
+The variables `pool`, `spa` and `isNewConstruction` may influence the house price, so we keep them.
 
 #### Variable `hasPetsAllowed`
 We see that there's very little houses with pets allowed 51 vs 6041, so we can consider it does not contribute to the model's prediction. We can remove it.
 ```{r}
 df$hasPetsAllowed = factor(df$hasPetsAllowed)
 table(df$hasPetsAllowed)
-barplot(table(df$hasPetsAllowed), main = "Barplot of hasPetsAllowed", col="pink")
+barplot(table(df$hasPetsAllowed), main = "Barplot of hasPetsAllowed", col="lightblue")
 sum(is.na(df$hasPetsAllowed))
 ```
 #### Variable `homeType`
 ```{r}
 df$homeType = factor(df$homeType)
 table(df$homeType)
-barplot(table(df$homeType), main = "Barplot of homeType", col="pink")
+barplot(table(df$homeType), main = "Barplot of homeType", col="lightblue")
 sum(is.na(df$homeType))
 ```
+Most properties are single-family homes, while townhouses, condos, and especially multi-family units are a minority. This imbalance should be considered in modeling. We can check whether the home type influences the price:
+
+```{r}
+boxplot(df$price ~ df$homeType, main="Price by Home Type", col="lightblue")
+```
+Multi-family units and condos are generally the cheaper, with lower median prices and limited price dispersion. Townhouses show a slightly higher median price compared to single-family homes, but single-family homes have a much wider price range and include numerous luxury properties
 
 ## Removed variable analysis
 
-In addition to the variables previously discussed, `countyId` (5) and `cityid` (6) were also removed due to inconsistencies, such as multiple codes representing the same city, and `cityid` values equal to 0. 
+In addition to the variables previously discussed, `countyId` and `cityId` will also be removed due to inconsistencies, such as multiple codes representing the same city, and `cityId` values equal to 0. 
 
-These variables are redundant, as they simply encode the categorical information already present in `county` and `city`, which are cleaner and more interpretable. 
+As we said before, these variables are redundant, as they simply encode the categorical information already present in `county` and `city`, which are cleaner and more interpretable. 
 
-Also, `longitude` (20) and `latitude` (21) variables are removed because they don't provide relevant information for the model, as they provide spatial information only. 
-
-Variable `hasPetsAllowed` (37) will be removed (diferencia entre factors).
-
+Variable `hasPetsAllowed` will be removed because of the big class imbalance, as well as variable `event`, it is also removed due to class imbalanced.
 
 ```{r}
 # Columns removed after initial analysis
-df2 <- df[,-c(1:10, 12, 16, 20:22, 24, 26, 29, 37)]
+#df2 <- df[,-c(1:10, 12, 16, 20:22, 24, 26, 29, 37)]
+df2 <- df[,-c(1:12, 18:22, 24, 26, 29, 37)]
 ```
+
+Finally, all the variables removed from the dataset were excluded due to low informational value, redundancy, or lack of variability. The following variables were discarded:
+
+- X.1 (1)
+- X (2)
+- id (3)
+- stateId (4)
+- countyId (5)
+- cityId (6)
+- country (7)
+- datePostedString (8)
+- is_bankOwned (9)
+- is_forAuction (10)
+- event (11)
+- time (12)
+- streetAddress (18)
+- zipcode (19)
+- longitude (20)
+- latitude (21)
+- hasBadGeocode (22)
+- currency (24)
+- livingAreaValue (26)
+- buildingArea (29)
+- hasPetsAllowed (37)
 
 ## 2.2. Detection of outliers
 ### 2.2.1. Univariate outliers
+We have managed some of the outliers in the previous section, the ones we have not removed are taken into account here:
+```{r}
+
+# all rows that have an extreme outlier for some variable
+total_extreme_outliers <- unique(c(
+  extreme_outliers_price,
+  extreme_outliers_psqft,
+  extreme_outliers_year,
+  extreme_outliers_area
+))
+
+total_mild_outliers <- unique(c(
+  mild_outliers_price,
+  mild_outliers_psqft,
+  mild_outliers_year,
+  mild_outliers_area
+))
+
+```
 
 
 ### 2.2.2. Multivariate outliers
