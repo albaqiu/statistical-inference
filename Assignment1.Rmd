@@ -24,25 +24,96 @@ df$datePostedString <- as.numeric(format(df$datePostedString, format = "%Y"))
 
 length(df[which(df$datePostedString == 2021),]$datePostedString)
 df <- df[which(df$datePostedString == 2021),]
-
-# Check for duplicates
-any(duplicated(df$id))
-sum(duplicated(df$id))
-duplicated_ids <- df$id[duplicated(df$id)]
-unique(duplicated_ids)
-
-#df[df$id %in% duplicated_ids, ] %>% arrange(id) 
 ```
-**Problem:** same information for all variables but different `countyId`. Since the variable `county` shows the same value for duplicated instances, `countyId` (5) will be removed due to the inconsistencies. If a numerical representation is needed, we will provide one. 
+
+
+```{r}
+
+## 1) Filas duplicadas por id, contiguas (para inspección rápida)
+dup_rows <- duplicated(df$id) | duplicated(df$id, fromLast = TRUE)
+dups_df  <- df[dup_rows, ][order(df$id[dup_rows]), ]
+head(dups_df, 20)
+
+## 2) Columnas a comparar (excluye 1:3, sin borrar del df)
+cols_idx <- setdiff(seq_along(df), c(1:3, 5))
+
+## 3) Comparación por id (qué columnas difieren entre duplicados)
+#    split evita tener que crear dup_ids y subsetting en bucle
+by_id <- split(dups_df[, cols_idx, drop = FALSE], dups_df$id)
+
+diffs_list <- lapply(by_id, function(sub) {
+  difs <- vapply(sub, function(x) length(unique(x)) > 1, logical(1))
+  names(difs)[difs]              # solo las columnas que cambian
+})
+
+## 4) Resumen: n° de variables distintas y cuáles son
+summary_df <- data.frame(
+  id       = names(diffs_list),
+  n_diff   = lengths(diffs_list),
+  diff_vars = ifelse(lengths(diffs_list) == 0, "None",
+                     vapply(diffs_list, function(x) paste(x, collapse = ", "), character(1))),
+  stringsAsFactors = FALSE
+)
+
+## 5) Distribución y combinaciones
+table(summary_df$n_diff)                               # 0, 1, 2, 3...
+sort(table(summary_df$diff_vars), decreasing = TRUE)   # combos: "countyId", "countyId, price", etc.
+
+```
+**Problem:** 
+1) Same information for all variables but different `countyId`. Since the variable `county` shows the same value for duplicated instances, `countyId` (5) will be removed due to the inconsistencies. If a numerical representation is needed, we will provide one. 
+2) Some observations have different information for some variables: check those carefully
+```{r}
+# Case 1
+## ids cuyo diff_vars == "None"
+ids_none <- summary_df$id[summary_df$diff_vars == "None"]
+
+## mantener SOLO la primera fila de cada id en ese subconjunto,
+## y dejar intacto el resto de ids
+keep_idx <- ifelse(df$id %in% ids_none, !duplicated(df$id), TRUE)
+
+## df actualizado (solo deduplicado para los casos "None")
+df <- df[keep_idx, ]
+
+## comprobación
+sum(duplicated(df$id) & df$id %in% ids_none)  # debe ser 0
+
+```
+```{r}
+# Case 2
+## resumen que nos interesa (excluye "None")
+summary_rest <- summary_df[summary_df$diff_vars != "None", ]
+
+## ver cuántos ids tiene cada combinación
+sort(table(summary_rest$diff_vars), decreasing = TRUE)
+
+## helper: función para ver todas las filas en df de una combinación concreta
+ver_comb <- function(combo_str) {
+  ids <- summary_rest$id[summary_rest$diff_vars == combo_str]
+  out <- df[df$id %in% ids, ]
+  out[order(out$id), ]
+}
+```
+
+
+```{r}
+# los 12 casos que difieren en "description"
+ver_comb("description") 
+
+# los 7 casos: "event, time, price, pricePerSquareFoot"
+ver_comb("event, time, price, pricePerSquareFoot")
+
+# un combo largo de ejemplo
+ver_comb("time, price, pricePerSquareFoot, description, garageSpaces, hasGarage")
+# el precio ha bajado con el tiempo pero lo raro es que ha cambiado el garage (ahora si q tiene)
+
+```
+
 
 ### Duplicate removal
 ```{r}
-library(dplyr)
 
-df <- df %>%
-  distinct(id, .keep_all = TRUE)
-  
-any(duplicated(df$id))
+
 ```
 # 2. Data cleaning
 
