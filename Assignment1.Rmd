@@ -188,6 +188,13 @@ df <- df[keep_idx, ]
 any(duplicated(df$id))
 ```
 
+```{r}
+# ---- Clean up intermediate data frames ----
+rm(list = setdiff(ls(), "df"))
+gc()  # Optional: frees up memory
+
+```
+
 # 2. Data cleaning
 
 ## 2.1. Variable analysis
@@ -537,6 +544,7 @@ Bedrooms is a discrete numerical variable.
 ```{r}
 summary(df$bedrooms)
 sum(is.na(df$bedrooms))
+sum(df$bedrooms == 0)
 ```
 
 ```{r}
@@ -919,13 +927,230 @@ The correlation matrix shows that `price` is strongly associated with `livingAre
 
 ## 2.2. Missing values
 In the dataset there are missing values in variables:
-- 
-- 
-- 
+- Bedrooms
+- Bathrooms
+- Levels
 
 ```{r}
+summary(df2)
+colSums(is.na(df2))
+na_per_row <- rowSums(is.na(df2))
+table(na_per_row)
+
+df2[rowSums(is.na(df2)) > 1, ]
+
+```
+The problem is that in 11 observations, there is a missing value for both bedrooms and bathrooms.
+Since they are correlated with price and each other (?), and they represent only a 0.2% of observations, we have decided to eliminate them, so as to not introduce too many errors.
+!!!!!! Pongo tambien el codigo sin eliminarlas x si acso
+```{r}
+# --- Packages ---
+library(mice)      # multiple imputation
+library(lattice)   # densityplot / stripplot used by mice
+# library(ggplot2) # optional, only if you want custom plots later
+
+# --- 0) Make a working copy (keep your original df untouched) ---
+df_work <- df2
+
+# --- 1) (Optional) Remove rows where BOTH bedrooms and bathrooms are NA ---
+#     Rationale: there are only ~11 such rows (~0.2%); removing them can simplify/strengthen imputation.
+drop_both_na <- FALSE  # <- set to TRUE if you want to drop those 11 rows
+
+if (drop_both_na) {
+  both_na_idx <- is.na(df_work$bedrooms) & is.na(df_work$bathrooms)
+  message("Dropping rows with bedrooms & bathrooms both NA: ", sum(both_na_idx))
+  df_work <- df_work[!both_na_idx, ]
+}
+
+# --- 2) Ensure correct types (levels should be a factor) ---
+if (!is.factor(df_work$levels)) {
+  df_work$levels <- factor(df_work$levels)
+}
+
+# --- 3) Select variables for imputation + predictors (adjust as you like) ---
+vars <- c(
+  "bathrooms", "bedrooms", "levels",        # variables to impute
+  "livingArea", "price", "pricePerSquareFoot",
+  "garageSpaces", "hasGarage", "parking",
+  "pool", "spa",
+  "homeType", "isNewConstruction",
+  "yearBuilt"                               # predictors only
+)
+
+# Subset to the columns used for MICE
+df_mice <- df_work[vars]
+
+# --- 4) Initialize mice to get default method and predictor matrix ---
+ini  <- mice(df_mice, maxit = 0, printFlag = FALSE)
+meth <- ini$method
+pred <- ini$predictorMatrix
+
+# --- 5) Set imputation methods ---
+# Numeric discrete -> "pmm"; Categorical (factor) -> "polyreg"
+meth["bathrooms"] <- "pmm"
+meth["bedrooms"]  <- "pmm"
+meth["levels"]    <- "polyreg"
+
+# Optional: do NOT impute any other variable (predictors only)
+to_leave <- c("bathrooms", "bedrooms", "levels")
+meth[setdiff(names(meth), to_leave)] <- ""
+
+# (Optional) You can also tweak the predictor matrix if needed, e.g.:
+# pred["bathrooms", c("bathrooms")] <- 0  # do not self-predict (mice already handles this)
+# pred["bedrooms",  c("bedrooms")]  <- 0
+# pred["levels",    c("levels")]    <- 0
+# If you found convergence issues before, consider removing very-high-cardinality factors from pred.
+
+# --- 6) Run MICE (impute all three at once) ---
+# m = 5 imputations is usually fine; increase to 10 for extra stability.
+set.seed(123)
+imp <- mice(
+  df_mice,
+  method = meth,
+  predictorMatrix = pred,
+  m = 5,
+  maxit = 5,          # increase to 10 if you want more iterations
+  printFlag = TRUE
+)
+
+# --- 7) Quick diagnostics ---
+print(imp)                  # summary of methods and # of imputations
+md.pattern(df_mice)         # missingness pattern (before imputation)
+densityplot(imp, ~ bathrooms + bedrooms)  # check distributions
+# For the factor 'levels', compare counts before vs after:
+cat("Levels (before):\n"); print(table(df_mice$levels, useNA = "ifany"))
+df_check <- complete(imp, 1)
+cat("Levels (after, imp #1):\n"); print(table(df_check$levels))
+
+# --- 8) (Optional) Inspect the exact imputed values ---
+# Shows the imputed cells only (rows that were NA originally)
+imp$imp$bathrooms  # each column = one imputed dataset
+imp$imp$bedrooms
+imp$imp$levels
+
+# --- 9) Create one completed dataset (choose any 1..m, or pool later if needed) ---
+df_completed <- complete(imp, action = 1)
+
+# --- 10) Replace ONLY the missing cells back into your original df ---
+# Bathrooms
+na_bath_idx <- is.na(df_work$bathrooms)
+df_work$bathrooms[na_bath_idx] <- df_completed$bathrooms[na_bath_idx]
+
+# Bedrooms
+na_bed_idx <- is.na(df_work$bedrooms)
+df_work$bedrooms[na_bed_idx] <- df_completed$bedrooms[na_bed_idx]
+
+# Levels
+na_levels_idx <- is.na(df_work$levels)
+df_work$levels[na_levels_idx] <- df_completed$levels[na_levels_idx]
+
+# --- 11) (Optional) Keep a flag of which values were imputed (use imp$where for robustness) ---
+# Note: imp$where indicates which cells were NA in df_mice at the time of mice()
+imputed_flags <- as.data.frame(imp$where[, c("bathrooms","bedrooms","levels")])
+names(imputed_flags) <- c("imp_bathrooms", "imp_bedrooms", "imp_levels")
+# Bind to df_work if you want to keep the flags for downstream checks
+df_work <- cbind(df_work, imputed_flags)
+
+# --- 12) Final checks ---
+summary(df_work$bathrooms)
+summary(df_work$bedrooms)
+table(df_work$levels)
+
+# df_work now contains the imputed values (and flags, if you kept them).
+# If you decide to drop the 11 rows, set drop_both_na = TRUE at the top.
+
+summary(df_work)
+
+```
+
+
+!!!!!!!!Este codigo es de prueba (el que habia hecho solo con bathrooms)
+```{r}
+library(mice)
+library(ggplot2)
+
+# Seleccionamos las variables relevantes
+vars <- c("bathrooms", "bedrooms", "livingArea", "levels", 
+          "price",
+          "garageSpaces", "hasGarage", "parking", 
+          "pool", "spa",
+          "homeType", "isNewConstruction",
+          "yearBuilt")
+
+# Subconjunto
+df_sub <- df[vars]
+
+# Configuramos MICE
+ini <- mice(df_sub, maxit = 0)
+meth <- ini$method
+pred <- ini$predictorMatrix
+
+# Especificamos método solo para bathrooms
+meth["bathrooms"] <- "pmm"
+
+# Opcional: imputar solo bathrooms (las demás se ignoran)
+meth[setdiff(names(meth), "bathrooms")] <- ""
+
+# Ejecutamos imputación
+imp <- mice(df_sub, method = meth, predictorMatrix = pred, m = 5, seed = 123)
+
+# Dataset completo
+df_imputed <- complete(imp)
+
+# Comprobar que tenga sentido 
+densityplot(imp, ~ bathrooms)
+
+library(ggplot2)
+
+library(ggplot2)
+
+# 1) Saca un dataset completo (p.ej., la 1ª imputación)
+df_check <- complete(imp, action = 1)
+
+# 2) Flag robusto de "esto fue NA antes de imputar"
+#    (usa EXACTAMENTE el nombre de la variable imputada en el objeto mice)
+df_check$.imp_flag <- imp$where[, "bathrooms"]
+
+# (opcional) comprueba cuántos hay
+cat("Imputed points:", sum(df_check$.imp_flag), "\n")
+
+# 3) Dibuja primero observados en gris y luego imputados en rojo encima
+ggplot() +
+  geom_point(
+    data = df_check[!df_check$.imp_flag, ],
+    aes(x = livingArea, y = bathrooms),
+    color = "grey60", alpha = 0.5, size = 1.7
+  ) +
+  geom_point(
+    data = df_check[df_check$.imp_flag, ],
+    aes(x = livingArea, y = bathrooms),
+    color = "tomato", alpha = 1, size = 3
+  ) +
+  geom_smooth(
+    data = df_check,
+    aes(x = livingArea, y = bathrooms),
+    method = "lm", se = FALSE, color = "black"
+  ) +
+  labs(
+    title = "Bathrooms vs Living Area (Observed vs Imputed)",
+    x = "Living Area (sq ft)", y = "Bathrooms"
+  ) +
+  theme_minimal(base_size = 13)
+-.
+summary(lm(bathrooms ~ livingArea + bedrooms + price + garageSpaces + levels, data = df_check))
+
+
+# Reemplazamos bathrooms imputados en el df original
+df$bathrooms[is.na(df$bathrooms)] <- df_imputed$bathrooms[is.na(df$bathrooms)]
+
+```
+
+
+```{r}
+summary(df2)
 # Imputation: MICE
 library(mice)
+# Method 'pmm' is used for numerical variables
 res.imp <- mice(df2, method = 'pmm', seed=123)
 df$bathrooms <- complete(res.imp, 1)$bathrooms
 summary(df$bathrooms)
