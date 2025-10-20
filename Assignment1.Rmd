@@ -1065,6 +1065,7 @@ summary(df_work)
 
 
 !!!!!!!!Este codigo es de prueba (el que habia hecho solo con bathrooms)
+Lo que esta bien es el grafico para ver que valores ha imputado y si tienen sentido
 ```{r}
 library(mice)
 library(ggplot2)
@@ -1145,16 +1146,6 @@ df$bathrooms[is.na(df$bathrooms)] <- df_imputed$bathrooms[is.na(df$bathrooms)]
 
 ```
 
-
-```{r}
-summary(df2)
-# Imputation: MICE
-library(mice)
-# Method 'pmm' is used for numerical variables
-res.imp <- mice(df2, method = 'pmm', seed=123)
-df$bathrooms <- complete(res.imp, 1)$bathrooms
-summary(df$bathrooms)
-```
 
 
 ## 2.3. Detection of outliers
