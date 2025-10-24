@@ -1064,7 +1064,113 @@ df4 <- df3[ll, ]
 acf(df4$price) 
 ```
 
-# 4. Export to clean csv
+
+# 4. Profiling
+Profiling for the target variable price will be done using the FactoMineR package.
+
+  - As a numerical variable `price`: using 'condes' method. 
+  - As a factor `f.price`: using 'catdes' method. 
+
+The factor will help with interpretation, so it will be easier to see discrepancies between groups.
+
+```{r}
+# Detect and clean variables
+
+
+one_level_vars <- names(df3)[sapply(df3, function(x) is.factor(x) && nlevels(x) < 2)] # Categorical variables with fewer than 2 levels
+constant_vars <- names(df3)[sapply(df3, function(x) length(unique(x[!is.na(x)])) < 2)] # Identify columns that are all NA or constant numeric values
+
+vars_to_remove <- unique(c(one_level_vars, constant_vars))
+
+df_prof <- df3[, !(names(df3) %in% vars_to_remove)]
+
+```
+
+```{r}
+# Analysis with price as numerical
+res.con <- condes(df_prof, which(names(df_prof) == 'price'))
+
+res.con$quanti
+res.con$quali
+res.con$category
+```
+# 4.1 Price as numeric
+
+# Numeric Predictors (`res.con$quanti`)
+
+- Strongest positive associations:  
+  `livingArea` (~0.72), `bathrooms` (~0.68), `pricePerSquareFoot` (~0.51), `bedrooms` (~0.46).  
+  → Larger homes with more bathrooms and bedrooms tend to have higher prices. 
+  
+- Moderate association:  
+  `yearBuilt` (~0.24) shows newer constructions are slightly more expensive.  
+
+
+# Categorical Predictors (`res.con$quali` and `$category`)
+
+- Most explanatory factors (by R²):  
+  `f.price` (as expected), `levels`, `garageSpaces`, `hasGarage`, `spa`, `f.yearBuilt`, `parking`, `pool`.  
+- Categories associated with above-average price:  
+  `f.price=High`, `garageSpaces=3 or more`, `levels=two` / `three or more`,  
+  `hasGarage=1`, `pool=1`, `spa=1`, `f.yearBuilt=New/Recent`,  
+  `parking=1`, `homeType=SINGLE_FAMILY`, `event_status=Active`. 
+  
+- Categories associated with below-average price:  
+  `levels=one`, `garageSpaces=0–2`, `hasGarage=0`, `pool=0`, `spa=0`,  
+  `f.yearBuilt=Old/Historic`, `homeType=CONDO` or `MULTI_FAMILY`, `parking=0`, `event_status=Sold`.
+  
+- Interpretation:  
+  More stories, larger garages, newer builds, and amenities (pool/spa/parking) mark higher-value properties;  
+  condos, no garage, and older homes pull prices down.
+
+```{r}
+# Analysis with price as a factor
+res.cat <- catdes(df_prof, which(names(df_prof) == 'f.price'))
+
+res.cat$quanti.var
+res.cat$quanti
+res.cat$test.chi2
+res.cat$category
+
+```
+
+
+# 4.2. Price as Factor 
+
+# Numeric Predictors (`res.cat$quanti.var` and `$quanti`)
+
+- Top numeric discriminators (by Eta²):  
+  `price` (trivial, derived), `livingArea`, `bathrooms`, `pricePerSquareFoot`, `bedrooms`, `yearBuilt`. 
+  
+- Profiles by price band:
+  - Low: small living area, fewer bathrooms/bedrooms, low price per sq. ft, older construction.  
+  - Medium-Low: slightly newer but still modest size and rooms.  
+  - Medium-High: newer homes, larger, more rooms, higher price per sq. ft.  
+  - High: very large, many rooms/baths, newer builds, highest price per sq. ft.  
+  
+- Interpretation:  
+  Size, number of rooms, and build year cleanly separate price bands.
+
+
+# Categorical Predictors (`res.cat$test.chi2` and `$category`)
+
+- Most significant categorical links (χ² test):  
+  `hasGarage`, `garageSpaces`, `levels`, `f.yearBuilt`, `parking`, `spa`, `pool`, `homeType`. 
+  
+- Patterns by band:
+  - Low: overrepresented by `no garage`, `garageSpaces=0`, `levels=one`, `parking=0`, `old/historic`,  
+    `no spa/pool`, `MULTI_FAMILY` or `CONDO`, and `Sold` listings.  
+  - Medium-Low: moderate garage/parking, mostly `spa=0`, some condos, underrepresented in high amenities.    - Medium-High: frequent `garageSpaces=2`, `levels=two`, `parking=1`, `new/recent`, `SINGLE_FAMILY`.  
+  - High: dominant in `garageSpaces≥3`, `spa=1`, `pool=1`, `levels≥2`, `newer`, `parking=1`,  
+    and `SINGLE_FAMILY`; underrepresented in `CONDO`, `MULTI_FAMILY`, or `old` stock.  
+    
+
+Note:
+`f.price` and `pricePerSquareFoot` are derived from `price`.  
+They are valid for descriptive profiling but should  be used as independent predictors  
+in any model aiming to explain or forecast `price`.
+
+# 5. Export to clean csv
 ```{r}
 write.csv(df4, "House_Clean.csv", row.names = FALSE)
 ```
