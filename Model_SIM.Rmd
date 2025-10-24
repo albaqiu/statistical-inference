@@ -1,0 +1,17 @@
+---
+title: "Model_SIM.Rmd"
+output: html_document
+date: "2025-10-24"
+---
+```{r}
+# Clear plots
+if(!is.null(dev.list())) dev.off()
+
+# Clean workspace
+rm(list=ls())
+```
+
+```{r}
+df <- read.csv("House_Clean.csv", header = TRUE)
+```
+

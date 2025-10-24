@@ -600,7 +600,7 @@ prop.table(table(df$event))
 # Barplot
 barplot(table(df$event), main = "Barplot of event", las = 2, col = "lightblue")
 ```
-Since `event` primarily indicates listing status and not intrinsic property characteristics, it may not contribute significantly to price prediction. It's strongly imbalanced and it could be removed or simplified to a binary indicator (active vs. sold).
+Since `event` primarily indicates listing status and not intrinsic property characteristics, it may not contribute significantly to price prediction. It's strongly imbalanced and it could be removed later.
 
 ```{r}
 df$event_status <- as.character(df$event)
@@ -609,7 +609,6 @@ df$event_status[df$event_status %in% c("Listed for sale", "Pending sale", "Price
 df$event_status[df$event_status == "Sold"] <- "Sold"
 df$event_status <- factor(df$event_status)
 table(df$event_status)
-
 ```
 
 Although the `event` variable was simplified into “Active” and “Sold,” the “Sold” category represents less than 1% of the dataset (49 out of 5465 observations). 
@@ -861,7 +860,7 @@ Variables `hasPetsAllowed` and `event` will be removed because of the big class 
 
 ```{r}
 # Columns removed after initial analysis
-df2 <- df[,-c(1:12, 15:16, 18:24, 26, 29, 37, 39)]
+df2 <- df[,-c(1:12, 15:16, 18:24, 26, 29, 37, 39, 43, 45)]
 ```
 
 Finally, all the variables removed from the dataset were excluded due to low informational value, redundancy, or lack of variability. The following variables were discarded:
@@ -891,14 +890,15 @@ Finally, all the variables removed from the dataset were excluded due to low inf
 - buildingArea (29)
 - hasPetsAllowed (37)
 - county (39)
+- eventStatus (43)
 
 The dataset obtained after the preprocessing contains the following variables:
-- 7 numerical variables: `price`, `pricePerSquareFoot`, `yearBuilt`, `livingArea`, `bathrooms`, `bedrooms`.
-- 12 categorical variables: `state`, `parking`, `garageSpaces`, `hasGarage`, `levels`, `pool`, `spa`, `isNewConstruction`, `homeType`, `county`, `f.price`, `f.yearBuilt`.
+- 6 numerical variables: `price`, `pricePerSquareFoot`, `yearBuilt`, `livingArea`, `bathrooms`, `bedrooms`.
+- 10 categorical variables: `parking`, `garageSpaces`, `hasGarage`, `levels`, `pool`, `spa`, `isNewConstruction`, `homeType`, `f.price`, `f.yearBuilt`.
 
 ```{r}
 # Numerical variables:
-dfnum <- df2[,c(1:6)] # o yearBuilt o n.yearBuilt (escollir una)
+dfnum <- df2[,c(1:6)]
 
 # Categorical variables:
 dfcat <- df2[,c(7:14, 18:19)]
@@ -1062,6 +1062,11 @@ Since the temporal order of the observations is not relevant for the predictive 
 ll <- sample(1:nrow(df3), nrow(df3))
 df4 <- df3[ll, ]
 acf(df4$price) 
+```
+
+# 4. Export to clean csv
+```{r}
+write.csv(df4, "House_Clean.csv", row.names = FALSE)
 ```
 
 
