@@ -188,9 +188,17 @@ any(duplicated(df$id))
 ```
 
 ```{r}
-# ---- Clean up intermediate data frames ----
+# Clean up intermediate data frames
 rm(list = setdiff(ls(), "df"))
-gc()  # Optional: frees up memory
+```
+
+We create a df to store the outliers.
+
+```{r}
+# mild and extreme univariate outliers
+df$mild_uout <- 0
+df$extr_uout <- 0
+df$mout <- 0 #multivariate outliers
 ```
 
 # 2. Data cleaning
@@ -253,8 +261,6 @@ curve(dnorm(x, mean(df$price), sd(df$price)), add = T)
 As can be seen in the histogram, the target variable `Price` does not follow a normal distribution. The distribution of `Price` is right-skewed, with most values concentrated between approximately 100,000 and 600,000, and a peak around 300,000. This indicates that lower-priced properties are more common, while higher-priced ones are less frequent but still present.
 
 As the price increases, the frequency of observations declines progressively, and only a small number of properties exceed $1,000,000. This long right tail suggests the presence of high-value outliers, typical of luxury properties, we should take this into account as it could affect modeling.
-
-
 
 !!!!!!!!!!!!!!!!!As it is not normal, should we transform it? log transformation
 
@@ -336,6 +342,7 @@ extreme_outliers <- which(df$pricePerSquareFoot < lsout | df$pricePerSquareFoot 
 
 cat("Number of mild outliers:", length(mild_outliers), "\n")
 cat("Number of extreme outliers:", length(extreme_outliers), "\n")
+
 ```
 The variable `pricePerSquareFoot` presents a strong right-skew with a median around 153, while the maximum reaches an unusually extreme value (over 200,000). The IQR analysis detects 258 mild outliers and 51 extreme outliers, confirming the presence of several abnormally high observations. These values likely result from data entry errors or exceptional listings and will require treatment to prevent them from disproportionately influencing the model.
 
@@ -551,13 +558,11 @@ hist(df$bedrooms, breaks = 30, freq = F, main="Histogram of bedrooms", xlab = "b
 curve(dnorm(x, mean(df$bedrooms, na.rm=TRUE), sd(df$bedrooms, na.rm=TRUE)), add = TRUE, col = "red")
 ```
 
-As can be seen in the histogram, some observations have 0 bedrooms. Just as `bathrooms` variable, these values are replaced with NA to indicate missing data and then later we will impute the variable using the **MICE** algorithm. 
+As can be seen in the histogram, some observations have 0 bedrooms. Just as `bathrooms` variable, these values are replaced with NA to indicates missing data and then later we will impute the variable using the **MICE** algorithm. 
 
 ```{r}
 # Replace impossible values (0 bedrooms) with NA
 df$bedrooms[df$bedrooms == 0] <- NA
-# Replace the observation with 14 bedrooms with 4 according to the description
-df$bedrooms[df$bedrooms == 14] <- 4
 # We check if it was applied correctly
 sum(is.na(df$bedrooms))
 ```
@@ -867,7 +872,7 @@ Variables `hasPetsAllowed` and `event` will be removed because of the big class 
 
 ```{r}
 # Columns removed after initial analysis
-df2 <- df[,-c(1:12, 16, 18:24, 26, 29, 37)]
+df2 <- df[,-c(1:12, 15:16, 18:24, 26, 29, 37,39)]
 ```
 
 Finally, all the variables removed from the dataset were excluded due to low informational value, redundancy, or lack of variability. The following variables were discarded:
@@ -884,6 +889,7 @@ Finally, all the variables removed from the dataset were excluded due to low inf
 - is_forAuction (10)
 - event (11)
 - time (12)
+- city (15) ----
 - state (16)
 - streetAddress (18)
 - zipcode (19)
@@ -895,6 +901,7 @@ Finally, all the variables removed from the dataset were excluded due to low inf
 - livingAreaValue (26)
 - buildingArea (29)
 - hasPetsAllowed (37)
+- county (39)
 
 
 The dataset obtained after the preprocessing contains the following variables:
@@ -903,10 +910,10 @@ The dataset obtained after the preprocessing contains the following variables:
 
 ```{r}
 # Numerical variables:
-dfnum <- df2[,c(1:2, 4:7)] # o yearBuilt o n.yearBuilt (escollir una)
+dfnum <- df2[,c(1:6)] # o yearBuilt o n.yearBuilt (escollir una)
 
 # Categorical variables:
-dfcat <- df2[,c(3, 8:16,18:20)]
+dfcat <- df2[,c(7:14, 16:18)]
 
 summary(dfnum)
 ```
@@ -977,6 +984,17 @@ summary(completed_df)
 vars_no_impute <- setdiff(names(df2), vars)
 df3 <- cbind(completed_df, df2[vars_no_impute])
 ```
+To validate the results of the imputation, we compare the quantiles before and after to see if they have changed. 
+
+They have not changed.
+```{r}
+#VALIDATION
+quantile(df$bathrooms, probs=seq(0,1,by=0.1), na.rm=T)
+quantile(df3$bathrooms, probs=seq(0,1,by=0.1), na.rm=F)
+
+quantile(df$bedrooms, probs=seq(0,1,by=0.1), na.rm=T)
+quantile(df3$bedrooms, probs=seq(0,1,by=0.1), na.rm=F)
+```
 
 
 ## 2.3. Detection of outliers
@@ -992,12 +1010,16 @@ total_extreme_outliers <- unique(c(
   extreme_outliers_area
 ))
 
+df3$extr_uout[total_extreme_outliers] <-1
+
 total_mild_outliers <- unique(c(
   mild_outliers_price,
   mild_outliers_psqft,
   mild_outliers_year,
   mild_outliers_area
 ))
+
+df3$mild_uout[total_mild_outliers] <-1
 
 ```
 
@@ -1010,7 +1032,7 @@ library(chemometrics)
 
 dfnum <- df3[,c(1:2, 4:6, 14)] # year built
 
-res.mout <- Moutlier(dfnum,quantile=0.995, plot=F) 
+res.mout <- Moutlier(dfnum,quantile=0.99999995, plot=F) 
 str(res.mout) # list of: 1. md: Mahalanobis distance / 2. rd / 3. cutoff (threshold)
 
 par(mfrow=c(1,1))
@@ -1024,6 +1046,9 @@ ll <- which((res.mout$md>res.mout$cutoff) & (res.mout$rd>res.mout$cutoff)); ll #
 
 moutliers <- length(ll)/length(df2)
 moutliers
+```
+```{r}
+
 ```
 
 
