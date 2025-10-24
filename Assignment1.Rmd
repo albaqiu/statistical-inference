@@ -556,6 +556,8 @@ As can be seen in the histogram, some observations have 0 bedrooms. Just as `bat
 ```{r}
 # Replace impossible values (0 bedrooms) with NA
 df$bedrooms[df$bedrooms == 0] <- NA
+# Replace the observation with 14 bedrooms with 4 according to the description
+df$bedrooms[df$bedrooms == 14] <- 4
 # We check if it was applied correctly
 sum(is.na(df$bedrooms))
 ```
@@ -876,7 +878,7 @@ Finally, all the variables removed from the dataset were excluded due to low inf
 - stateId (4)
 - countyId (5)
 - cityId (6)
-- country (7)
+- country (7) ----
 - datePostedString (8)
 - is_bankOwned (9)
 - is_forAuction (10)
@@ -888,7 +890,7 @@ Finally, all the variables removed from the dataset were excluded due to low inf
 - longitude (20)
 - latitude (21)
 - hasBadGeocode (22)
-- description (23)
+- description (23) ---
 - currency (24)
 - livingAreaValue (26)
 - buildingArea (29)
@@ -904,7 +906,7 @@ The dataset obtained after the preprocessing contains the following variables:
 dfnum <- df2[,c(1:2, 4:7)] # o yearBuilt o n.yearBuilt (escollir una)
 
 # Categorical variables:
-dfcat <- df2[,c(3, 8:20)]
+dfcat <- df2[,c(3, 8:16,18:20)]
 
 summary(dfnum)
 ```
