@@ -76,14 +76,14 @@ livingArea lambda positiu, pr < 0.05 -> reject H0 -> relació no es lineal -> tr
 boxcox(price ~bedrooms+bathrooms+livingArea, data=df[,num_vars]) #we see that sqrt is the suitable tranformation
 boxTidwell(sqrt(price) ~ bedrooms+bathrooms+livingArea+n.yearBuilt, data=df[,num_vars])
 
-boxTidwell(sqrt(price) ~ bedrooms+sqrt(bathrooms)+log(livingArea), data=df[,num_vars])
-
+#we use sqrt
 m1 <- lm(sqrt(price) ~bedrooms+bathrooms+livingArea+n.yearBuilt, data=df[,num_vars])
 summary(m1)
 vif(m1)
 step(m1)
 AIC(m1)
 
+#we remove n.yearBuilt
 m2 <- lm(sqrt(price) ~ bedrooms+bathrooms+livingArea, data=df[,num_vars])
 summary(m2)
 vif(m2)
@@ -91,102 +91,211 @@ anova(m2,m1)
 step(m2)
 AIC(m2)
 
-```
-
-## Transformations
-
-```{r}
-
-boxTidwell(sqrt(price) ~ bedrooms+bathrooms+livingArea, data=df[,num_vars]) #
-
-m2 <- lm( prestige ~ education + log(income), data = df[, c(1:4)])
+#we use the ^1/3 transformation
+m3 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt, data=df[,num_vars])
 summary(m3)
-par(mfrow=c(2,2))
-plot(m3, id.n=0)
-par(mfrow=c(1,1))
+vif(m3)
+anova(m3,m1)
+step(m3)
+AIC(m3)
+```
+We keep m3 as the numeric model.
 
-marginalModelPlots( m3, id=list(n=0))
-residualPlots( m3, id=list(n=0))
-avPlots( m3, id=list(n=0))
-crPlots( m3, id=list(n=0))
-influencePlot( m3, id=list(n=3))
+```{r}
+marginalModelPlots(m3, id=list(n=0))
+residualPlots(m3, id=list(n=0))
+avPlots(m3, id=list(n=0))
+crPlots(m3, id=list(n=0))
+influencePlot(m3, id=list(n=3))
+plot(m3)
+plot(allEffects(m3))
+```
+### Influent data assesment
+We see a priori influent data in our dataset, so before moving on to the next step, we remove them.
+
+```{r}
+llres<-which(abs(rstudent(m3))>3); llres
+llhat<-which(hatvalues(m3)>3*length(coef(m3))/nrow(df));llhat
+llcoo<-Boxplot(cooks.distance(m3), id=list(n=10,labels=row.names(df)))
+influencePlot(m3)
+df[llres,]
+ll<-which(row.names(df) %in% c("611", "1590","5415"));ll
+
+df<-df[-ll,]
+```
+```{r}
+# same model without suspicious influent data
+m3_1 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt, data=df[,num_vars])
+summary(m3_1)
+vif(m3_1)
+#anova(m3_1,m3)
+step(m3_1)
+AIC(m3_1)
+
+marginalModelPlots(m3_1, id=list(n=0))
+residualPlots(m3_1, id=list(n=0))
+avPlots(m3_1, id=list(n=0))
+crPlots(m3_1, id=list(n=0))
+influencePlot(m3_1, id=list(n=3))
+plot(m3_1)
+plot(allEffects(m3_1))
+
 ```
 
 
-# Anova - Net-effects of explanatory variables
-(Es cuando metes los factors al modelo)
+# Model: numeric variables + factors
+After applying condes() to se which factors are more related to Price.
 
-Response: prestige
-          Sum Sq Df  F value    Pr(>F)    
-education 7142.4  1 116.0109 < 2.2e-16 ***
-income    1376.7  1  22.3612 7.579e-06 ***
-women        5.3  1   0.0858    0.7702    
-Residuals 6033.6 98                       
-
-Es un p-value condicional:
-- once income + women are already in the model, adding education is... (pvalue~0: significative)
-- once income + education are already in the model, adding women is... (pvalue>>0: not significative) (useless)
-
-  - cuidado: anova != Anova
+Levels: checking the level factor we observe that p-value < 0.01, we reject the H0 that the shorter model is better, so we keep the model with levels.
 
 ```{r}
-# step is not based on inferential (tradeoff goodness of fit/complexity)
-m2 <- step( m1 )
+m4 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels, data=df)
+summary(m4)
+vif(m4)
+AIC(m4)
+step(m4)
+anova(m3_1,m4)
+
+marginalModelPlots(m4, id=list(n=0))
+residualPlots(m4, id=list(n=0))
+avPlots(m4, id=list(n=0))
+crPlots(m4, id=list(n=0))
+influencePlot(m4, id=list(n=3))
+plot(m4)
+plot(allEffects(m4))
 ```
-('achaiche'??)
-comparas si quitas women, si no quitas ninugno, si quitas income, si quitas education...
-
-# Start:  AIC=424.17
-prestige ~ education + income + women
-
-            Df Sum of Sq     RSS    AIC
-- women      1       5.3  6038.9 422.26
-<none>                    6033.6 424.17
-- income     1    1376.7  7410.3 443.14
-- education  1    7142.4 13176.0 501.84
-
-Step:  AIC=422.26
-prestige ~ education + income
-
-            Df Sum of Sq     RSS    AIC
-<none>                    6038.9 422.26
-- income     1    2248.1  8287.0 452.54
-- education  1    8577.3 14616.2 510.42
-
-BIC-Schwartz
-
 ```{r}
-summary(m2)
-par(mfrow=c(2,2))
-plot(m2, id.n=0)
+m5 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces, data=df)
+summary(m5)
+vif(m5)
+AIC(m5)
+step(m5)
+anova(m4,m5)
 
-# residual analysis looks fine. normal distribution tmb
-
-# units for resiudals: Y-^Y
-# standardized residuals: should be interpreted as standard normal distribution. very convenient (simlpifies interpretation)
-
-par(mfrow=c(1,1))
-influencePlot( m2, id=list(n=5,method="noteworthy") )
-
-# Studentized Residuals (just a technichality)
-# transformed residual interpreted as N~(0,1)
-# vertical lines: threshold (la primera: 2xmean head value, la segunda 3xmhv)
-# horizontal lines: unusual pero no tanto como general managers x ej
-
-residualPlots(m2) #useful for assignment
-# checkeas los residuals y los explanatory variables a ver si no hay alguna con tendencia
-# income parece un poco raro... we have to try to improve linear relation bw prestige and income
+marginalModelPlots(m5, id=list(n=0))
+residualPlots(m5, id=list(n=0))
+avPlots(m5, id=list(n=0))
+crPlots(m5, id=list(n=0))
+influencePlot(m5, id=list(n=3))
+plot(m5)
+plot(allEffects(m5))
 ```
- residualPlots(m2)
-           Test stat Pr(>|Test stat|)    
-education     1.3447        0.1818236    
-income       -3.6732        0.0003904 ***
-Tukey test   -1.5264        0.1269206 
--- te avisa que en income pasa algo
 
 ```{r}
-marginalModelPlots(m2)
-# if you see discrepancies your model has to be improved
-avPlots(m2)
+m5 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces, data=df)
+summary(m5)
+vif(m5)
+AIC(m5)
+step(m5)
+anova(m5,m4)
+
+marginalModelPlots(m5, id=list(n=0))
+residualPlots(m5, id=list(n=0))
+avPlots(m5, id=list(n=0))
+crPlots(m5, id=list(n=0))
+influencePlot(m5, id=list(n=3))
+plot(m5)
+```
+
+```{r}
+m6 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage, data=df)
+summary(m6)
+vif(m6)
+AIC(m6)
+step(m6)
+anova(m5,m6)
+
+marginalModelPlots(m6, id=list(n=0))
+residualPlots(m6, id=list(n=0))
+avPlots(m6, id=list(n=0))
+crPlots(m6, id=list(n=0))
+influencePlot(m6, id=list(n=3))
+plot(m6)
+```
+```{r}
+m7 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage+spa, data=df)
+summary(m7)
+vif(m7)
+AIC(m7)
+step(m7)
+anova(m7,m6)
+
+marginalModelPlots(m7, id=list(n=0))
+residualPlots(m7, id=list(n=0))
+avPlots(m7, id=list(n=0))
+crPlots(m7, id=list(n=0))
+influencePlot(m7, id=list(n=3))
+plot(m7)
+```
+```{r}
+m8 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage+spa+parking, data=df)
+summary(m8)
+vif(m8)
+AIC(m8)
+step(m8)
+anova(m8,m7)
+
+marginalModelPlots(m8, id=list(n=0))
+residualPlots(m8, id=list(n=0))
+avPlots(m8, id=list(n=0))
+crPlots(m8, id=list(n=0))
+influencePlot(m8, id=list(n=3))
+plot(m8)
+```
+
+```{r}
+m9 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+pool, data=df)
+summary(m9)
+vif(m9)
+AIC(m9)
+step(m9)
+anova(m9,m8)
+
+marginalModelPlots(m9, id=list(n=0))
+residualPlots(m9, id=list(n=0))
+avPlots(m9, id=list(n=0))
+crPlots(m9, id=list(n=0))
+influencePlot(m9, id=list(n=3))
+plot(m9)
+```
+
+```{r}
+m10 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+pool+homeType, data=df)
+summary(m10)
+vif(m10)
+AIC(m10)
+step(m10)
+anova(m10,m9)
+
+m10_1 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+homeType, data=df)
+summary(m10_1)
+vif(m10_1)
+AIC(m10_1)
+step(m10_1)
+anova(m10_1,m10)
+
+#marginalModelPlots(m10, id=list(n=0))
+#residualPlots(m10, id=list(n=0))
+#avPlots(m10, id=list(n=0))
+#crPlots(m10, id=list(n=0))
+#influencePlot(m10, id=list(n=3))
+#plot(m10)
+```
+```{r}
+#amb sqrt
+m19 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+n.yearBuilt, data=df)
+summary(m19)
+vif(m19)
+AIC(m19)
+step(m19)
+#anova(m19,m9)
+
+m20 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+n.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+pool+homeType, data=df)
+summary(m20)
+vif(m20)
+AIC(m20)
+step(m20)
+anova(m19,m20)
+
 ```
 
