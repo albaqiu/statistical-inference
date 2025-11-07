@@ -1,6 +1,8 @@
 ---
 title: "Model_SIM.Rmd"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 date: "2025-10-24"
 ---
 ```{r}
