@@ -19,7 +19,7 @@ knitr::opts_chunk$set(
 )
 ```
 
-```{r}
+```{r, include=FALSE}
 # Clear plots
 if(!is.null(dev.list())) dev.off()
 
@@ -79,13 +79,13 @@ table(summary_df$n_diff)
 # Frequency of variable combinations that differ (e.g., "countyId", "countyId, price")
 sort(table(summary_df$diff_vars), decreasing = TRUE)
 ```
-**Cases:** 
-We manage the duplicates separating them in 2 categories.
+ 
+We manage the duplicates separating them in 2 cases:
 
-Case 1) Exact duplicates: duplicates with same information across all variables but different `countyId` (None group).
+**Case 1) Exact duplicates:** duplicates with same information across all variables but different `countyId` (None group).
     - Action: select one of the two duplicates.
     
-Case 2) Conflicting duplicates: some duplicates have different information for some variables
+**Case 2) Conflicting duplicates:** some duplicates have different information for some variables
     - Action: check these carefully.
 
 ```{r, include=FALSE}
@@ -124,23 +124,22 @@ In order to thoroughly treat the duplicates, the individual observations have be
 
 After analyzing all duplicate groups, the conclusions we have reached are as follows:
 
-  * Observations with different description: Since they have the same values for everything else, and the description is not a relevant variable, only one of the two duplicates will be retained.
+  **- Observations with different description:** Since they have the same values for everything else, and the description is not a relevant variable, only one of the two duplicates will be retained.
   
-  * Observations with combinations of different time+event, time+price: After checking all observations, it is confirmed that the duplicates correspond to price or event changes. The most recent observations are the ones to retain, since they contain the most recent information.
+  **- Observations with combinations of different time+event, time+price:** After checking all observations, it is confirmed that the duplicates correspond to price or event changes. The most recent observations are the ones to retain, since they contain the most recent information.
       ** One particular observation of this case also includes a modification in description, garageSpaces, hasGarage. Since the description hints that the Garage has been renovated to a basement, the most recent observation is also the one to include.
   
-  * One observation with different value for 'garageSpaces': since 'garage' has value 1 for both observations, we conclude the reliable description is the one where 'garageSpaces' is 1, not the one with value 0.
+  **- One observation with different value for 'garageSpaces':** since 'garage' has value 1 for both observations, we conclude the reliable description is the one where 'garageSpaces' is 1, not the one with value 0.
   
-  * One observation with different value for 'parking': Since there is no reasonable way to find out which is the correct observation (value 0 or 1), the decision is to remove both duplicates, so as to not work with incorrect information.
+  **- One observation with different value for 'parking':** Since there is no reasonable way to find out which is the correct observation (value 0 or 1), the decision is to remove both duplicates, so as to not work with incorrect information.
   
-  *One observation time, price, pricePerSquareFoot, description, garageSpaces, hasGarage"
+  
+### Duplicate removal
 ```{r}
 # Before duplicate removal
 nrow(df)
 ```
-  
 
-### Duplicate removal
 ```{r, include=FALSE}
 ## We start from:
 ## - df  (already deduped for "None" cases)
@@ -217,7 +216,6 @@ nrow(df)
 any(duplicated(df$id))
 ```
 
-
 ```{r, include=FALSE}
 # Clean up intermediate data frames
 rm(list = setdiff(ls(), "df"))
@@ -237,6 +235,7 @@ df$mout <- 0 #multivariate outliers
 ## 2.1. Variable analysis
 
 #### Converting categorical variables to factors
+
 ```{r}
 # Converting characters to factor
 df[sapply(df, is.character)] <- lapply(df[sapply(df, is.character)], as.factor)
@@ -245,10 +244,9 @@ df[sapply(df, is.character)] <- lapply(df[sapply(df, is.character)], as.factor)
 df[sapply(df, function(x) all(na.omit(unique(x)) %in% c(0, 1)))] <- 
   lapply(df[sapply(df, function(x) all(na.omit(unique(x)) %in% c(0, 1)))], as.factor)
 
-summary(df)
 ```
-```{r}
-summary(df$livingArea == df$livingAreaValue)
+```{r, include=FALSE}
+summary(df$livingArea == df$livingAreaValue);
 summary(df$livingArea == df$buildingArea)
 ```
 
@@ -337,11 +335,13 @@ However, due to their potential influence on model performance, a logarithmic tr
 
 ### 2.1.2. Numerical variables
 #### Variable `pricePerSquareFoot`
-```{r}
+```{r, echo = FALSE}
 # Summary statistics
 summary(df$pricePerSquareFoot)
-sum(is.na(df$pricePerSquareFoot))
+```
 
+
+```{r, include = FALSE}
 # Histogram + Normal curve
 hist(df$pricePerSquareFoot, breaks = 30, freq = FALSE, main = "Histogram of pricePerSquareFoot", xlab = "pricePerSquareFoot")
 curve(dnorm(x, mean(df$pricePerSquareFoot, na.rm=TRUE), sd(df$pricePerSquareFoot, na.rm=TRUE)), add = TRUE, col = "red")
@@ -381,9 +381,11 @@ cat("Number of mild outliers:", length(mild_outliers), "\n")
 cat("Number of extreme outliers:", length(extreme_outliers), "\n")
 
 ```
-The variable `pricePerSquareFoot` presents a strong right-skew with a median around 153, while the maximum reaches an unusually extreme value (over 200,000). The IQR analysis detects 258 mild outliers and 51 extreme outliers, confirming the presence of several abnormally high observations. These values likely result from data entry errors or exceptional listings and will require treatment to prevent them from disproportionately influencing the model.
+The variable `pricePerSquareFoot` presents a strong right-skew with a median around 153, while the maximum reaches an unusually extreme value (over 200,000). This value is considered a data entry error and will be removed.
 
-```{r}
+The IQR analysis detects 258 mild outliers and 51 extreme outliers, confirming the presence of several abnormally high observations. These values likely result from data entry errors or exceptional listings and will require treatment to prevent them from disproportionately influencing the model.
+
+```{r, echo = FALSE}
 # Delete extreme outlier
 df <- df[df$pricePerSquareFoot != 205000, ]
 summary(df$pricePerSquareFoot)
@@ -464,7 +466,7 @@ cat("Number of extreme outliers:", length(extreme_outliers_psqft), "\n")
 
 #### Variable `yearBuilt`
 
-```{r}
+```{r, echo = FALSE}
 # Summary statistics
 summary(df$yearBuilt)
 sum(is.na(df$yearBuilt))
@@ -473,6 +475,10 @@ sum(is.na(df$yearBuilt))
 9999 represents a NA, we remove it as the year built likely cannot be imputated.
 ```{r}
 df <- df[df$yearBuilt >= 1700 & df$yearBuilt <= 2025, ] # we only keep in the df the years within a realistic range
+```
+
+
+```{r, echo = FALSE}
 hist(df$yearBuilt, breaks = 30, freq = FALSE, main = "Histogram of yearBuilt", xlab = "yearBuilt")
 curve(dnorm(x, mean(df$yearBuilt, na.rm=TRUE), sd(df$yearBuilt, na.rm=TRUE)), add = TRUE, col = "red")
 ```
@@ -512,12 +518,12 @@ Although the IQR method identifies a set of mild and extreme outliers in `yearBu
 
 #### Variable `livingArea`
 
-```{r}
+```{r, echo = FALSE}
 summary(df$livingArea)
 sum(is.na(df$livingArea))
 ```
 
-```{r}
+```{r, echo = FALSE}
 # Histogram
 hist(df$livingArea, breaks = 30, freq = F, main="Histogram of livingArea", xlab = "livingArea")
 curve(dnorm(x, mean(df$livingArea, na.rm=TRUE), sd(df$livingArea, na.rm=TRUE)), add = TRUE, col = "red")
@@ -556,12 +562,12 @@ The `livingArea` variable shows a wide range of property sizes, with most homes 
 
 #### Variable `bathrooms`: num
 Bathroom is a discrete numerical variable. 
-```{r}
+```{r, echo = FALSE}
 summary(df$bathrooms)
 sum(is.na(df$bathrooms))
 ```
 
-```{r}
+```{r, echo = FALSE}
 # Histogram
 hist(df$bathrooms, breaks = 30, freq = F, main="Histogram of bathrooms", xlab = "bathrooms")
 curve(dnorm(x, mean(df$bathrooms, na.rm=TRUE), sd(df$bathrooms, na.rm=TRUE)), add = TRUE, col = "red")
@@ -581,13 +587,13 @@ After inspecting the advertisements for properties with 9 and 10 bathrooms, we c
 
 #### Variable `bedrooms`: num
 Bedrooms is a discrete numerical variable. 
-```{r}
+```{r, echo = FALSE}
 summary(df$bedrooms)
 sum(is.na(df$bedrooms))
 sum(df$bedrooms == 0)
 ```
 
-```{r}
+```{r, echo = FALSE}
 # Histogram
 hist(df$bedrooms, breaks = 30, freq = F, main="Histogram of bedrooms", xlab = "bedrooms")
 curve(dnorm(x, mean(df$bedrooms, na.rm=TRUE), sd(df$bedrooms, na.rm=TRUE)), add = TRUE, col = "red")
@@ -645,7 +651,7 @@ length(unique(df$city))
 But even after these corrections, the factor has too many levels, which are not easily regrouped. Therefore, this variable is removed from the analysis.
 
 #### Variable `hasGarage`
-```{r}
+```{r, echo = FALSE}
 df$hasGarage = factor(df$hasGarage)
 table(df$hasGarage)
 prop.table(table(df$hasGarage))
@@ -656,50 +662,49 @@ Most properties in the dataset (approximately 63%) have a garage, while the rema
 
 
 #### Variable `parking`
-```{r}
+```{r, echo = FALSE}
 table(df$parking)
 ```
-```{r}
+```{r, echo = FALSE}
 df$parking = factor(df$parking)
 barplot(table(df$parking), main = "Barplot of Parking", col="orange")
 ```
 Same as with `hasGarage`, the parking availability could affect the property price and desirability, thus, we maintain the variable.
 
 #### Variable `garageSpaces`
-```{r}
+```{r, echo = FALSE}
 table(df$garageSpaces)
 ```
-```{r}
+```{r, echo = FALSE}
 df$garageSpaces = factor(df$garageSpaces)
 barplot(table(df$garageSpaces), main = "Barplot of garageSpaces", col="orange")
 ```
 Since higher numbers of `garageSpaces` have fewer observations, we consider them as 1 level. 
 
-```{r}
+```{r, echo = FALSE}
 df$garageSpaces <- as.character(df$garageSpaces)
 df$garageSpaces[df$garageSpaces>=3] <- "3 or more"
 df$garageSpaces <- as.factor(df$garageSpaces)
 table(df$garageSpaces)
 ```
-```{r}
+```{r, echo = FALSE}
 barplot(table(df$garageSpaces), main = "Barplot of garageSpaces", col="orange")
 ```
 
 #### Variable `levels`
-```{r}
+```{r, echo = FALSE}
 df$levels = factor(df$levels)
-length(unique(df$levels))
 barplot(table(df$levels), main = "Barplot of levels", col="pink")
-sum(is.na(df$levels))
 ```
-To simplify the levels variable, some in between levels like the "one and one half" level was reassigned based on its similarity in average price to other groups. After comparing mean prices across levels, it was grouped with "two" to reduce sparsity and improve model interpretability. The same happens with "zero", which was grouped with "one".
 
-```{r}
+
+```{r, echo=FALSE}
 boxplot(price ~ levels, data = df,
         main = "Price by Level",
         col = "lightblue",
         las = 2)
 ```
+To simplify the levels variable, some in between levels like the "one and one half" level was reassigned based on its similarity in average price to other groups. After comparing mean prices across levels, it was grouped with "two" to reduce sparsity and improve model interpretability. The same happens with "zero", which was grouped with "one".
 
 ```{r, results = "hide"}
 # Standardize text formatting (lowercase + trim)
@@ -751,49 +756,49 @@ barplot(table(df$levels), main = "Barplot of levels", col="orange")
 
 
 #### Variable `pool`
-```{r}
+```{r, echo=FALSE}
 df$pool = factor(df$pool)
 table(df$pool)
 barplot(table(df$pool), main = "Barplot of pool", col="lightblue")
-sum(is.na(df$pool))
+# sum(is.na(df$pool))
 ```
 
 #### Variable `spa`
-```{r}
+```{r, echo=FALSE}
 df$spa = factor(df$spa)
 table(df$spa)
 barplot(table(df$spa), main = "Barplot of spa", col="lightblue")
-sum(is.na(df$spa))
+# sum(is.na(df$spa))
 ```
 
 #### Variable `isNewConstruction`
-```{r}
+```{r, echo=FALSE}
 df$isNewConstruction = factor(df$isNewConstruction)
 table(df$isNewConstruction)
 barplot(table(df$isNewConstruction), main = "Barplot of isNewConstruction", col="lightblue")
-sum(is.na(df$isNewConstruction))
+# sum(is.na(df$isNewConstruction))
 ```
 The variables `pool`, `spa` and `isNewConstruction` may influence the house price, so we keep them.
 
 #### Variable `hasPetsAllowed`
 We see that there's very little houses with pets allowed 51 vs 6041, so we can consider it does not contribute to the model's prediction. We can remove it.
-```{r}
+```{r, echo=FALSE}
 df$hasPetsAllowed = factor(df$hasPetsAllowed)
 table(df$hasPetsAllowed)
 barplot(table(df$hasPetsAllowed), main = "Barplot of hasPetsAllowed", col="lightblue")
-sum(is.na(df$hasPetsAllowed))
+# sum(is.na(df$hasPetsAllowed))
 ```
 
 #### Variable `homeType`
-```{r}
+```{r, echo=FALSE}
 df$homeType = factor(df$homeType)
 table(df$homeType)
 barplot(table(df$homeType), main = "Barplot of homeType", col="lightblue")
-sum(is.na(df$homeType))
+# sum(is.na(df$homeType))
 ```
 Most properties are single-family homes, while townhouses, condos, and especially multi-family units are a minority. This imbalance should be considered in modeling. We can check whether the home type influences the price:
 
-```{r}
+```{r, echo=FALSE}
 boxplot(df$price ~ df$homeType, main="Price by Home Type", col="lightblue")
 ```
 Multi-family units and condos are generally the cheaper, with lower median prices and limited price dispersion. Townhouses show a slightly higher median price compared to single-family homes, but single-family homes have a much wider price range and include numerous luxury properties.
@@ -802,7 +807,7 @@ Multi-family units and condos are generally the cheaper, with lower median price
 #### Variable `f.price`: cat
 We created an additional ordinal variable `f.price` by discretizing the continuous `Price` variable into four quartile-based categories: "Low", "Medium-Low", "Medium-High", and "High". 
 
-```{r}
+```{r, echo=FALSE}
 q <- quantile(df$price, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE)
 
 df$f.price <- cut(df$price,
@@ -874,11 +879,14 @@ The dataset obtained after the preprocessing contains the following variables:
 - 6 numerical variables: `price`, `pricePerSquareFoot`, `n.yearBuilt`, `livingArea`, `bathrooms`, `bedrooms`.
 - 10 categorical variables: `parking`, `garageSpaces`, `hasGarage`, `levels`, `pool`, `spa`, `isNewConstruction`, `homeType`, `f.price`, `f.yearBuilt`.
 
-```{r}
+```{r, include=FALSE}
 dfnum <- df2[,c(1:5, 18)] # Numerical variables
 dfcat <- df2[,c(6:13, 17, 19)] # Categorical variables
 dfout <- df2[,c(14:16)]
+```
 
+
+```{r}
 summary(dfnum)
 ```
 ```{r}
@@ -902,7 +910,7 @@ In the dataset there are missing values in variables:
 - Bathrooms
 - Levels
 
-```{r}
+```{r, include=FALSE}
 colSums(is.na(df2))
 na_per_row <- rowSums(is.na(df2))
 table(na_per_row)
@@ -912,14 +920,9 @@ The problem is that in 11 observations, there is a missing value for both bedroo
 ```{r, results="hide"}
 library(mice)    
 
-vars <- c(
-  "bathrooms", "bedrooms", "levels",
-  "livingArea", "price", "pricePerSquareFoot",
-  "garageSpaces", "hasGarage", "parking",
-  "pool", "spa",
-  "homeType", "isNewConstruction",
-  "n.yearBuilt"
-)
+vars <- c(  "bathrooms", "bedrooms", "levels", "livingArea", "price", "pricePerSquareFoot", 
+            "garageSpaces", "hasGarage", "parking", "pool", "spa", "homeType", 
+            "isNewConstruction", "n.yearBuilt")
 
 df_mice <- df2[vars]
 
@@ -958,8 +961,10 @@ quantile(df3$bedrooms, probs=seq(0,1,by=0.1), na.rm=F)
 
 ## 2.3. Detection of outliers
 ### 2.3.1. Univariate outliers
-We have managed some of the outliers in the previous section, the ones we have not removed are taken into account here:
-```{r}
+The univariate outliers have been detected in the previous section for each of the numeric variables. 
+The cases where it was necessary to remove them have already been handled. 
+The others will be stored in additional variables `mild_uot`and `extr_uot`.
+```{r, include=FALSE}
 dfout$extr_uout <- as.numeric(as.character(dfout$extr_uout))
 dfout$mild_uout <- as.numeric(as.character(dfout$mild_uout))
 
@@ -1050,7 +1055,7 @@ Profiling for the target variable price will be done using the FactoMineR packag
 
 The factor will help with interpretation, so it will be easier to see discrepancies between groups.
 
-```{r}
+```{r, include=FALSE}
 # Detect and clean variables
 one_level_vars <- names(df3)[sapply(df3, function(x) is.factor(x) && nlevels(x) < 2)] # Categorical variables with fewer than 2 levels
 constant_vars <- names(df3)[sapply(df3, function(x) length(unique(x[!is.na(x)])) < 2)] # Identify columns that are all NA or constant numeric values
@@ -1103,17 +1108,19 @@ res.con$category
 res.cat <- catdes(df_prof, which(names(df_prof) == 'f.price'))
 
 res.cat$quanti.var
-res.cat$quanti
 res.cat$test.chi2
-res.cat$category
 ```
 
+```{r, results = "hide"}
+res.cat$quanti
+res.cat$category
+```
 
 # 4.2. Price as Factor 
 
 # Numeric Predictors (`res.cat$quanti.var` and `$quanti`)
 
-- Top numeric discriminators (by Eta²):  
+- Top numeric discriminators:  
   `price` (trivial, derived), `livingArea`, `bathrooms`, `pricePerSquareFoot`, `bedrooms`, `n.yearBuilt`. 
   
 - Profiles by price band:
@@ -1128,13 +1135,13 @@ res.cat$category
 
 # Categorical Predictors (`res.cat$test.chi2` and `$category`)
 
-- Most significant categorical links (Chi² test):  
+- Most significant categorical links:  
   `hasGarage`, `garageSpaces`, `levels`, `f.yearBuilt`, `parking`, `spa`, `pool`, `homeType`. 
   
 - Patterns by band:
   - Low: overrepresented by `no garage`, `garageSpaces=0`, `levels=one`, `parking=0`, `old/historic`,  
     `no spa/pool`, `MULTI_FAMILY` or `CONDO`, and `Sold` listings.  
-  - Medium-Low: moderate garage/parking, mostly `spa=0`, some condos, underrepresented in high amenities.    - Medium-High: frequent `garageSpaces=2`, `levels=two`, `parking=1`, `new/recent`, `SINGLE_FAMILY`.  
+  - Medium-Low: moderate garage/parking, mostly `spa=0`, some condos, underrepresented in high amenities.    -         - Medium-High: frequent `garageSpaces=2`, `levels=two`, `parking=1`, `new/recent`, `SINGLE_FAMILY`.  
   - High: dominant in `garageSpaces≥3`, `spa=1`, `pool=1`, `levels≥2`, `newer`, `parking=1`,  
     and `SINGLE_FAMILY`; underrepresented in `CONDO`, `MULTI_FAMILY`, or `old` stock.  
     
@@ -1147,7 +1154,7 @@ in any model aiming to explain or forecast `price`.
 
 # 5. Export to clean csv
 ```{r}
-write.csv(df4, "House_Clean3.csv", row.names = FALSE)
+write.csv(df4, "House_Clean.csv", row.names = FALSE)
 ```
 
 ```{r, include=FALSE}
