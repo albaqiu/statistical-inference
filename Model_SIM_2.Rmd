@@ -51,17 +51,21 @@ MLR has explanatory variables with only numeric
 When I add factors it becomes GLM 
 
 # Model: numeric variables
-We build a model with all numeric variables. As livingArea and pricePerSquareFoot perfectly describe the target, we use livingArea because it's more correlated with the target price.
-
-Analyzing the p-values for the first model (with only numeric variables), we observe that n.yearBuilt has a p-value > 0.05 so we remove this from the model.
+We build a model with all numeric variables. As livingArea and pricePerSquareFoot perfectly describe the target, we use pricePerSquareFoot because after building both models we get better results for the model using pricePerSquareFoot.
 
 Analyzing the variance inflation factor (VIF), we observe that all values are below 5, indicating that the predictors are not highly linearly correlated, so multicollinearity is not a problem.
 
 ```{r}
 head(df)
-m0 <- lm(price ~bedrooms+bathrooms+livingArea+n.yearBuilt, data=df[,num_vars])
+m0 <- lm(price ~bedrooms+bathrooms+livingArea+n.yearBuilt, data=df)
 summary(m0)
 vif(m0)
+
+m0_f <- lm(price ~bedrooms+bathrooms+livingArea+f.yearBuilt, data=df)
+summary(m0_f)
+vif(m0_f)
+# both models have similar AIC and R^2, so we keep the factor yearsBuilt
+
 ```
 We use boxcox transformation and we observe that lambda is near 0.5, so we apply sqrt transformation to our target price.
 
@@ -69,37 +73,53 @@ We compare two models m1 and m2, which are the models with sqrt of price and the
 
 bedrooms lambda negatiu, pr < 0.05 -> reject H0 -> relació no es lineal -> transformació -> no transformació
 bathrooms lambda positiu, pr < 0.05 -> reject H0 -> relació no es lineal -> transformació -> sqrt
-livingArea lambda positiu, pr < 0.05 -> reject H0 -> relació no es lineal -> transformació -> sqrt
+livingArea lambda positiu, pr < 0.05 -> reject H0 -> relació no es lineal -> transformació -> 1/3
 
 
 ```{r}
-boxcox(price ~bedrooms+bathrooms+livingArea, data=df[,num_vars]) #we see that sqrt is the suitable tranformation
-boxTidwell(sqrt(price) ~ bedrooms+bathrooms+livingArea+n.yearBuilt, data=df[,num_vars])
+boxcox(price ~bedrooms+bathrooms+livingArea+n.yearBuilt, data=df) #we see that sqrt is the suitable tranformation
+boxTidwell(sqrt(price) ~ bedrooms+bathrooms+livingArea+n.yearBuilt, data=df) #we put sqrt to livingArea
 
-#we use sqrt
-m1 <- lm(sqrt(price) ~bedrooms+bathrooms+livingArea+n.yearBuilt, data=df[,num_vars])
+m1 <- lm(sqrt(price) ~bedrooms+bathrooms+livingArea+n.yearBuilt, data=df)
 summary(m1)
 vif(m1)
 step(m1)
 AIC(m1)
+par(mfrow=c(2,2))
+plot(m1,id=list(n=Inf,labels=row.names(df)))
+par(mfrow=c(1,1))
 
-#we remove n.yearBuilt
-m2 <- lm(sqrt(price) ~ bedrooms+bathrooms+livingArea, data=df[,num_vars])
+#we remove n.yearBuilt -> higher AIC
+m2 <- lm(sqrt(price) ~ bedrooms+bathrooms+livingArea, data=df)
 summary(m2)
 vif(m2)
 anova(m2,m1)
 step(m2)
 AIC(m2)
 
-#we use the ^1/3 transformation
-m3 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt, data=df[,num_vars])
+#we use the sqrt to livingArea transformation
+m3_n <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+n.yearBuilt, data=df)
+summary(m3_n)
+vif(m3_n)
+anova(m3_n,m1)
+step(m3_n)
+AIC(m3_n)
+
+#we try to use the factor version of yearBuilt and it yields better results, so we keep this model
+m3 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt, data=df)
 summary(m3)
 vif(m3)
 anova(m3,m1)
 step(m3)
 AIC(m3)
 ```
-We keep m3 as the numeric model.
+*We keep m3 as the numeric model*. We obtain for it a flatter line in Residuals vs Fitted than with model 1. This means the transformation I(livingArea^(1/3)) corrected the non-linearity that existed in m1.
+
+AIC is also lower 67552.73 < 67707.
+
+QQ plot: There’s a small deviation in the tails (some high-value houses still don’t fit perfectly), but the central part follows the line closely.
+
+Looking at the crPlot, a component + residual plot, it gives information of how well each numeric predictor fits a linear pattern after accounting for the others.
 
 ```{r}
 marginalModelPlots(m3, id=list(n=0))
@@ -110,192 +130,304 @@ influencePlot(m3, id=list(n=3))
 plot(m3)
 plot(allEffects(m3))
 ```
-### Influent data assesment
-We see a priori influent data in our dataset, so before moving on to the next step, we remove them.
+
+
+# Model with bathrooms and bedrooms as factors
+We try to use bathrooms and bedrooms as factors, obtaining Rsquared of 0.5725 for numeric and Rsquared of 0.5542 for factors, and AIC:
+df      AIC
+m3    6 67529.17
+mf_2  8 67762.35
+So we use the numeric version of the variables.
+
+
+### Starting from the model with all variables 
 
 ```{r}
-llres<-which(abs(rstudent(m3))>3); llres
-llhat<-which(hatvalues(m3)>3*length(coef(m3))/nrow(df));llhat
-llcoo<-Boxplot(cooks.distance(m3), id=list(n=10,labels=row.names(df)))
-influencePlot(m3)
+# Model with all factors
+m_full <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+pool+homeType, data=df)
+summary(m_full)
+Anova(m_full)
+
+# We see that pvalues for hasGarage and spa are lower, we try to exclude them from the model
+
+# Model without hasGarage
+m_full2 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+spa+parking+pool+homeType, data=df)
+summary(m_full2)
+Anova(m_full2)
+
+# Model without hasGarage and spa
+m_full3 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+parking+pool+homeType, data=df)
+summary(m_full3)
+Anova(m_full3)
+
+# Model without spa
+m_full4 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+hasGarage+parking+pool+homeType, data=df)
+summary(m_full4)
+Anova(m_full4)
+
+# AICs are similar, so we keep the simplest model
+        #df      AIC
+#m_full  20 67250.86
+#m_full2 19 67257.26
+#m_full3 18 67267.14
+#m_full4 19 67260.52
+
+m_step <- step(m_full3, direction = "both", trace = TRUE)
+summary(m_step)
+AIC(m_step)
+
+marginalModelPlots(m_full3, id=list(n=0))
+residualPlots(m_full3, id=list(n=0))
+avPlots(m_full3, id=list(n=0))
+crPlots(m_full3, id=list(n=0))
+influencePlot(m_full3, id=list(n=3))
+par(mfrow=c(2,2))
+plot(m_full3)
+par(mfrow=c(1,1))
+```
+### Interactions
+
+```{r}
+md1 <- lm(sqrt(price)~bathrooms*(f.yearBuilt+levels+garageSpaces+parking+pool+homeType),data=df)
+# summary(md1)
+step(md1)
+# with the step function we conclude that the meaningful interactions with bathroom are
+# bathrooms:levels
+# bathrooms:garageSpaces
+# bathrooms:parking
+# bathrooms:homeType
+
+md2 <- lm(sqrt(price)~bedrooms*(f.yearBuilt+levels+garageSpaces+parking+pool+homeType),data=df)
+# summary(md2)
+step(md2)
+# bedrooms:f.yearBuilt
+# bedrooms:levels
+# bedrooms:garageSpaces
+# bedrooms:pool
+# bedrooms:homeType
+
+md3 <- lm(sqrt(price)~livingArea*(f.yearBuilt+levels+garageSpaces+parking+pool+homeType),data=df)
+# summary(md3)
+step(md3)
+# livingArea:f.yearBuilt
+# livingArea:levels
+# livingArea:garageSpaces
+# livingArea:parking
+# livingArea:homeType
+
+md4 <- lm(sqrt(price)~f.yearBuilt*(levels+garageSpaces+parking+pool+homeType),data=df)
+# summary(md4)
+step(md4)
+
+#f.yearBuilt:levels
+# f.yearBuilt:garageSpaces
+# f.yearBuilt:parking 
+# f.yearBuilt:pool
+# f.yearBuilt:homeType
+
+md5 <- lm(sqrt(price)~levels*(f.yearBuilt+garageSpaces+parking+pool+homeType),data=df)
+# summary(md5)
+step(md5)
+# levels:f.yearBuilt
+# levels:garageSpaces
+# levels:homeType
+
+md6 <- lm(sqrt(price)~garageSpaces*(f.yearBuilt+levels+parking+pool+homeType),data=df)
+# summary(md6)
+step(md6)
+# garageSpaces:f.yearBuilt
+# garageSpaces:levels
+# garageSpaces:pool
+# garageSpaces:homeType
+
+md7 <- lm(sqrt(price)~parking*(f.yearBuilt+levels+garageSpaces+pool+homeType),data=df)
+# summary(md7)
+step(md7)
+# parking:f.yearBuilt
+# parking:homeType
+
+md8 <- lm(sqrt(price)~pool*(f.yearBuilt+levels+garageSpaces+parking+homeType),data=df)
+# summary(md8)
+step(md8)
+# pool:f.yearBuilt
+# pool:garageSpaces
+# pool:parking
+# pool:homeType
+
+md9 <- lm(sqrt(price)~homeType*(f.yearBuilt+levels+garageSpaces+parking+pool),data=df)
+# summary(md9)
+step(md9)
+# homeType:f.yearBuilt
+# homeType:levels
+# homeType:garageSpaces
+# homeType:pool
+
+model <- lm(
+  sqrt(price) ~ bedrooms + bathrooms + sqrt(livingArea) + f.yearBuilt +
+    levels + garageSpaces + parking + pool + homeType +
+    bathrooms:levels +
+    bathrooms:garageSpaces +
+    bathrooms:parking +
+    bathrooms:homeType +
+    bedrooms:f.yearBuilt +
+    bedrooms:levels +
+    bedrooms:garageSpaces +
+    bedrooms:pool +
+    bedrooms:homeType +
+    livingArea:f.yearBuilt +
+    livingArea:levels +
+    livingArea:garageSpaces +
+    livingArea:parking +
+    livingArea:homeType +
+    f.yearBuilt:levels +
+    f.yearBuilt:garageSpaces +
+    f.yearBuilt:parking +
+    f.yearBuilt:pool +
+    f.yearBuilt:homeType +
+    levels:garageSpaces +
+    levels:homeType +
+    garageSpaces:pool +
+    garageSpaces:homeType +
+    parking:homeType +
+    pool:parking +
+    pool:homeType,
+  data = df
+)
+
+#summary(model)
+# Anova(model)
+```
+### FINAL MODEL
+
+```{r}
+
+model_reduced <- lm(
+  sqrt(price) ~ bedrooms + bathrooms + sqrt(livingArea) + f.yearBuilt +
+    levels + garageSpaces + parking + pool + homeType +
+    bedrooms:f.yearBuilt +
+    bedrooms:homeType +
+    f.yearBuilt:livingArea +
+    f.yearBuilt:levels +
+    f.yearBuilt:garageSpaces +
+    f.yearBuilt:parking +
+    f.yearBuilt:pool +
+    f.yearBuilt:homeType +
+    garageSpaces:pool,
+  data=df
+)
+
+summary(model_reduced)
+```
+
+```{r}
+marginalModelPlots(model_reduced, id=list(n=0))
+#residualPlots(model_reduced, id=list(n=0))
+avPlots(model_reduced, id=list(n=0))
+#crPlots(model_reduced, id=list(n=0))
+influencePlot(model_reduced, id=list(n=3))
+par(mfrow=c(2,2))
+plot(model_reduced)
+par(mfrow=c(1,1))
+```
+
+### Influent data assesment
+
+We remove data with high leverage, high studentized residuals and high Coo's distance, this is, common observations (intersection) in llres and llhat.
+
+We also use the boxplot of Cook's distance.
+```{r}
+llres <- which(abs(rstudent(model_reduced)) > 3)
+llhat <- which(hatvalues(model_reduced) > 3 * length(coef(model_reduced)) / nrow(df))
+common_outliers <- intersect(llres, llhat)
+df[common_outliers, ]
+
+#df <- df[-common_outliers, ]
+
+llcoo<-Boxplot(cooks.distance(model_reduced), id=list(n=10,labels=row.names(df)))
+abline(h=4/(nrow(df)-length(coef(model_reduced))))
+
+# we do not use this criterium because sample is large
+llCH<-which(cooks.distance(model_reduced) > 4/(nrow(df)-length(coef(model_reduced))));llCH  #278
+
+influencePlot(model_reduced)
 df[llres,]
-ll<-which(row.names(df) %in% c("611", "1590","5415"));ll
+ll<-which(row.names(df) %in% c("611", "1300"));ll
 
 df<-df[-ll,]
 ```
+We fit the model again without the 2 outliers.
+
 ```{r}
-# same model without suspicious influent data
-m3_1 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt, data=df[,num_vars])
-summary(m3_1)
-vif(m3_1)
-#anova(m3_1,m3)
-step(m3_1)
-AIC(m3_1)
+model_reduced_2 <- lm(
+  sqrt(price) ~ bedrooms + bathrooms + sqrt(livingArea) + f.yearBuilt +
+    levels + garageSpaces + parking + pool + homeType +
+    bedrooms:f.yearBuilt +
+    bedrooms:homeType +
+    f.yearBuilt:livingArea +
+    f.yearBuilt:levels +
+    f.yearBuilt:garageSpaces +
+    f.yearBuilt:parking +
+    f.yearBuilt:pool +
+    f.yearBuilt:homeType +
+    garageSpaces:pool,
+  data=df
+)
 
-marginalModelPlots(m3_1, id=list(n=0))
-residualPlots(m3_1, id=list(n=0))
-avPlots(m3_1, id=list(n=0))
-crPlots(m3_1, id=list(n=0))
-influencePlot(m3_1, id=list(n=3))
-plot(m3_1)
-plot(allEffects(m3_1))
-
+#summary(model_reduced_2)
 ```
 
-
-# Model: numeric variables + factors
-After applying condes() to se which factors are more related to Price.
-
-Levels: checking the level factor we observe that p-value < 0.01, we reject the H0 that the shorter model is better, so we keep the model with levels.
+We compute the influential data again to see if some remain. We observe that 4291 also has high lat value and high studentized residuals, as well as high Cook's distance, so we remove it.
 
 ```{r}
-m4 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels, data=df)
-summary(m4)
-vif(m4)
-AIC(m4)
-step(m4)
-anova(m3_1,m4)
+llres <- which(abs(rstudent(model_reduced_2)) > 3)
+llhat <- which(hatvalues(model_reduced_2) > 3 * length(coef(model_reduced_2)) / nrow(df))
+common_outliers <- intersect(llres, llhat)
+df[common_outliers, ]
 
-marginalModelPlots(m4, id=list(n=0))
-residualPlots(m4, id=list(n=0))
-avPlots(m4, id=list(n=0))
-crPlots(m4, id=list(n=0))
-influencePlot(m4, id=list(n=3))
-plot(m4)
-plot(allEffects(m4))
-```
-```{r}
-m5 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces, data=df)
-summary(m5)
-vif(m5)
-AIC(m5)
-step(m5)
-anova(m4,m5)
+#df <- df[-common_outliers, ]
 
-marginalModelPlots(m5, id=list(n=0))
-residualPlots(m5, id=list(n=0))
-avPlots(m5, id=list(n=0))
-crPlots(m5, id=list(n=0))
-influencePlot(m5, id=list(n=3))
-plot(m5)
-plot(allEffects(m5))
+llcoo<-Boxplot(cooks.distance(model_reduced_2), id=list(n=10,labels=row.names(df)))
+influencePlot(model_reduced_2)
+df[llres,]
+ll<-which(row.names(df) %in% c("4291"));ll
+
+df<-df[-ll,]
 ```
 
+Our final model without the influential data:
 ```{r}
-m5 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces, data=df)
-summary(m5)
-vif(m5)
-AIC(m5)
-step(m5)
-anova(m5,m4)
 
-marginalModelPlots(m5, id=list(n=0))
-residualPlots(m5, id=list(n=0))
-avPlots(m5, id=list(n=0))
-crPlots(m5, id=list(n=0))
-influencePlot(m5, id=list(n=3))
-plot(m5)
+model_reduced_3 <- lm(
+  sqrt(price) ~ bedrooms + bathrooms + sqrt(livingArea) + f.yearBuilt +
+    levels + garageSpaces + parking + pool + homeType +
+    bedrooms:f.yearBuilt +
+    bedrooms:homeType +
+    f.yearBuilt:livingArea +
+    f.yearBuilt:levels +
+    f.yearBuilt:garageSpaces +
+    f.yearBuilt:parking +
+    f.yearBuilt:pool +
+    f.yearBuilt:homeType +
+    garageSpaces:pool,
+  data=df
+)
+
+summary(model_reduced_3)
 ```
 
-```{r}
-m6 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage, data=df)
-summary(m6)
-vif(m6)
-AIC(m6)
-step(m6)
-anova(m5,m6)
+After removing 3 influential data, our model achieves a R^2 of 0.6207.
 
-marginalModelPlots(m6, id=list(n=0))
-residualPlots(m6, id=list(n=0))
-avPlots(m6, id=list(n=0))
-crPlots(m6, id=list(n=0))
-influencePlot(m6, id=list(n=3))
-plot(m6)
+### Model validation
+
+```{r}
+marginalModelPlots(model_reduced_3, id=list(n=0))
+#residualPlots(model_reduced_3, id=list(n=0))
+avPlots(model_reduced_3, id=list(n=0))
+#crPlots(model_reduced_3, id=list(n=0))
+influencePlot(model_reduced_3, id=list(n=3))
+par(mfrow=c(2,2))
+plot(model_reduced_3)
+par(mfrow=c(1,1))
 ```
-```{r}
-m7 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage+spa, data=df)
-summary(m7)
-vif(m7)
-AIC(m7)
-step(m7)
-anova(m7,m6)
-
-marginalModelPlots(m7, id=list(n=0))
-residualPlots(m7, id=list(n=0))
-avPlots(m7, id=list(n=0))
-crPlots(m7, id=list(n=0))
-influencePlot(m7, id=list(n=3))
-plot(m7)
-```
-```{r}
-m8 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage+spa+parking, data=df)
-summary(m8)
-vif(m8)
-AIC(m8)
-step(m8)
-anova(m8,m7)
-
-marginalModelPlots(m8, id=list(n=0))
-residualPlots(m8, id=list(n=0))
-avPlots(m8, id=list(n=0))
-crPlots(m8, id=list(n=0))
-influencePlot(m8, id=list(n=3))
-plot(m8)
-```
-
-```{r}
-m9 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+pool, data=df)
-summary(m9)
-vif(m9)
-AIC(m9)
-step(m9)
-anova(m9,m8)
-
-marginalModelPlots(m9, id=list(n=0))
-residualPlots(m9, id=list(n=0))
-avPlots(m9, id=list(n=0))
-crPlots(m9, id=list(n=0))
-influencePlot(m9, id=list(n=3))
-plot(m9)
-```
-
-```{r}
-m10 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+pool+homeType, data=df)
-summary(m10)
-vif(m10)
-AIC(m10)
-step(m10)
-anova(m10,m9)
-
-m10_1 <- lm(sqrt(price) ~bedrooms+bathrooms+I(livingArea^(1/3))+n.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+homeType, data=df)
-summary(m10_1)
-vif(m10_1)
-AIC(m10_1)
-step(m10_1)
-anova(m10_1,m10)
-
-#marginalModelPlots(m10, id=list(n=0))
-#residualPlots(m10, id=list(n=0))
-#avPlots(m10, id=list(n=0))
-#crPlots(m10, id=list(n=0))
-#influencePlot(m10, id=list(n=3))
-#plot(m10)
-```
-```{r}
-#amb sqrt
-m19 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+n.yearBuilt, data=df)
-summary(m19)
-vif(m19)
-AIC(m19)
-step(m19)
-#anova(m19,m9)
-
-m20 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+n.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+pool+homeType, data=df)
-summary(m20)
-vif(m20)
-AIC(m20)
-step(m20)
-anova(m19,m20)
-
 ```
 
