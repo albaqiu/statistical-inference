@@ -316,7 +316,7 @@ model_reduced <- lm(
   data=df
 )
 
-#summary(model_reduced)
+summary(model_reduced)
 ```
 
 ```{r}
@@ -332,29 +332,102 @@ par(mfrow=c(1,1))
 
 ### Influent data assesment
 
-```{r}
-llres<-which(abs(rstudent(model_reduced))>3); llres
+We remove data with high leverage, high studentized residuals and high Coo's distance, this is, common observations (intersection) in llres and llhat.
 
-llhat<-which(hatvalues(model_reduced)>3*length(coef(model_reduced))/nrow(df));llhat
-
-llcoo<-Boxplot(cooks.distance(model_reduced), id=list(n=10,labels=row.names(df)))
-abline(h=3*length(coef(model_reduced))/nrow(df), col ='red')
-
-influencePlot(model_reduced)
-df[llres,]
-ll<-which(row.names(df) %in% c("611", "1300"));ll
-
-#df<-df[-ll,]
-```
-
-## Influent data but only the common observations in llres and llhat
-# it's only one -> 611 we can remove it
+We also use the boxplot of Cook's distance.
 ```{r}
 llres <- which(abs(rstudent(model_reduced)) > 3)
 llhat <- which(hatvalues(model_reduced) > 3 * length(coef(model_reduced)) / nrow(df))
 common_outliers <- intersect(llres, llhat)
 df[common_outliers, ]
 
-df <- df[-common_outliers, ]
+#df <- df[-common_outliers, ]
+
+llcoo<-Boxplot(cooks.distance(model_reduced), id=list(n=10,labels=row.names(df)))
+abline(h=4/(nrow(df)-length(coef(model_reduced))))
+
+# we do not use this criterium because sample is large
+llCH<-which(cooks.distance(model_reduced) > 4/(nrow(df)-length(coef(model_reduced))));llCH  #278
+
+influencePlot(model_reduced)
+df[llres,]
+ll<-which(row.names(df) %in% c("611", "1300"));ll
+
+df<-df[-ll,]
+```
+We fit the model again without the 2 outliers.
+
+```{r}
+model_reduced_2 <- lm(
+  sqrt(price) ~ bedrooms + bathrooms + sqrt(livingArea) + f.yearBuilt +
+    levels + garageSpaces + parking + pool + homeType +
+    bedrooms:f.yearBuilt +
+    bedrooms:homeType +
+    f.yearBuilt:livingArea +
+    f.yearBuilt:levels +
+    f.yearBuilt:garageSpaces +
+    f.yearBuilt:parking +
+    f.yearBuilt:pool +
+    f.yearBuilt:homeType +
+    garageSpaces:pool,
+  data=df
+)
+
+#summary(model_reduced_2)
+```
+
+We compute the influential data again to see if some remain. We observe that 4291 also has high lat value and high studentized residuals, as well as high Cook's distance, so we remove it.
+
+```{r}
+llres <- which(abs(rstudent(model_reduced_2)) > 3)
+llhat <- which(hatvalues(model_reduced_2) > 3 * length(coef(model_reduced_2)) / nrow(df))
+common_outliers <- intersect(llres, llhat)
+df[common_outliers, ]
+
+#df <- df[-common_outliers, ]
+
+llcoo<-Boxplot(cooks.distance(model_reduced_2), id=list(n=10,labels=row.names(df)))
+influencePlot(model_reduced_2)
+df[llres,]
+ll<-which(row.names(df) %in% c("4291"));ll
+
+df<-df[-ll,]
+```
+
+Our final model without the influential data:
+```{r}
+
+model_reduced_3 <- lm(
+  sqrt(price) ~ bedrooms + bathrooms + sqrt(livingArea) + f.yearBuilt +
+    levels + garageSpaces + parking + pool + homeType +
+    bedrooms:f.yearBuilt +
+    bedrooms:homeType +
+    f.yearBuilt:livingArea +
+    f.yearBuilt:levels +
+    f.yearBuilt:garageSpaces +
+    f.yearBuilt:parking +
+    f.yearBuilt:pool +
+    f.yearBuilt:homeType +
+    garageSpaces:pool,
+  data=df
+)
+
+summary(model_reduced_3)
+```
+
+After removing 3 influential data, our model achieves a R^2 of 0.6207.
+
+### Model validation
+
+```{r}
+marginalModelPlots(model_reduced_3, id=list(n=0))
+#residualPlots(model_reduced_3, id=list(n=0))
+avPlots(model_reduced_3, id=list(n=0))
+#crPlots(model_reduced_3, id=list(n=0))
+influencePlot(model_reduced_3, id=list(n=3))
+par(mfrow=c(2,2))
+plot(model_reduced_3)
+par(mfrow=c(1,1))
+```
 ```
 
