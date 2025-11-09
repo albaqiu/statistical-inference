@@ -1,12 +1,24 @@
 ---
-title: "Model_SIM.Rmd"
+title: "Assignment 1: Model"
+author: 'Laia Jané, Elisa Müller, Runxiao Qiu'
 output:
   pdf_document: default
   html_document: default
-date: "2025-10-24"
+date: "2025-11-09"
 ---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  message    = FALSE,   # oculta mensajes
+  warning    = FALSE,   # oculta warnings
+  fig.align  = "center",
+  fig.width  = 5,       # tamaño base de los gráficos (en pulgadas)
+  fig.height = 3.5,
+  dpi        = 120,
+  out.width  = "70%"   # reduce tamaño en la página
+)
+```
 
-```{r}
+```{r, include=FALSE}
 if(!is.null(dev.list())) dev.off()
 rm(list=ls())
 
@@ -20,7 +32,7 @@ library(MASS)
 
 # 6. Build the model
 
-```{r}
+```{r, include=FALSE}
 df <- read.csv("House_Clean.csv", header = TRUE)
 
 df[sapply(df, is.character)] <- lapply(df[sapply(df, is.character)], as.factor)
@@ -28,7 +40,10 @@ df[sapply(df, is.character)] <- lapply(df[sapply(df, is.character)], as.factor)
 # Converting binary columnsto factor
 df[sapply(df, function(x) all(na.omit(unique(x)) %in% c(0, 1)))] <- 
   lapply(df[sapply(df, function(x) all(na.omit(unique(x)) %in% c(0, 1)))], as.factor)
+```
 
+
+```{r, include=FALSE}
 summary(df)
 ```
 
@@ -97,7 +112,8 @@ m2 <- lm(sqrt(price) ~ bedrooms+bathrooms+livingArea, data=df)
 # Model: srt(price) and sqrt(livingArea)
 m3 <- lm(sqrt(price) ~ bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt, data=df)
 summary(m3)
-vif(m3); step(m3); AIC(m3)
+# step(m3)
+vif(m3); AIC(m3)
 anova(m3,m1)
 ```
 
@@ -115,7 +131,7 @@ marginalModelPlots(m3, id=list(n=0))
 residualPlots(m3, id=list(n=0))
 avPlots(m3, id=list(n=0))
 crPlots(m3, id=list(n=0))
-influencePlot(m3, id=list(n=3))
+# influencePlot(m3, id=list(n=3))
 par(mfrow=c(2,2))
 plot(m3)
 par(mfrow=c(1,1))
@@ -131,7 +147,8 @@ We also tested whether treating bedrooms and bathrooms as categorical variables 
 ```{r}
 # Model with all factors
 m_full <- lm(sqrt(price) ~ bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+pool+homeType, data=df)
-summary(m_full)
+
+# summary(m_full)
 Anova(m_full)
 ```
 
@@ -164,7 +181,7 @@ marginalModelPlots(m_full3, id=list(n=0))
 residualPlots(m_full3, id=list(n=0))
 avPlots(m_full3, id=list(n=0))
 crPlots(m_full3, id=list(n=0))
-influencePlot(m_full3, id=list(n=3))
+# influencePlot(m_full3, id=list(n=3))
 par(mfrow=c(2,2))
 plot(m_full3)
 par(mfrow=c(1,1))
@@ -193,7 +210,7 @@ md2 <- lm(sqrt(price)~bedrooms*(f.yearBuilt+levels+garageSpaces+parking+pool+hom
 # bedrooms:homeType
 
 md3 <- lm(sqrt(price)~sqrt(livingArea)*(f.yearBuilt+levels+garageSpaces+parking+pool+homeType),data=df)
-summary(md3); 
+# summary(md3); 
 step(md3)
 # sqrt(livingArea):f.yearBuilt
 # sqrt(livingArea):parking
@@ -295,7 +312,7 @@ model_reduced <- lm(
     garageSpaces:pool,
   data=df
 )
-summary(model_reduced)
+# summary(model_reduced)
 ```
 
 ```{r}
