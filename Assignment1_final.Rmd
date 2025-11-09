@@ -802,6 +802,9 @@ total_mild_outliers <- unique(c(
 ))
 
 dfout$mild_uout[total_mild_outliers] <-1
+
+df3$mild_uout <- dfout$mild_uout
+df3$extr_uout <- dfout$extr_uout
 ```
 
 ### 2.3.2. Multivariate outliers
