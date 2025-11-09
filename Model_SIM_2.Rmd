@@ -5,11 +5,9 @@ output:
   html_document: default
 date: "2025-10-24"
 ---
-```{r}
-# Clear plots
-if(!is.null(dev.list())) dev.off()
 
-# Clean workspace
+```{r}
+if(!is.null(dev.list())) dev.off()
 rm(list=ls())
 
 library(car)
@@ -20,12 +18,14 @@ library(AER)
 library(MASS)
 ```
 
+# 6. Build the model
+
 ```{r}
-df <- read.csv("House_Clean2.csv", header = TRUE)
+df <- read.csv("House_Clean.csv", header = TRUE)
 
 df[sapply(df, is.character)] <- lapply(df[sapply(df, is.character)], as.factor)
 
-# Converting binary columns (only 0 or 1) to factor
+# Converting binary columnsto factor
 df[sapply(df, function(x) all(na.omit(unique(x)) %in% c(0, 1)))] <- 
   lapply(df[sapply(df, function(x) all(na.omit(unique(x)) %in% c(0, 1)))], as.factor)
 
@@ -35,147 +35,131 @@ summary(df)
 ```{r}
 num_vars <- names(df)[sapply(df, is.numeric)]
 cor(df[,num_vars]) 
-plot(df[,num_vars])
 ```
-## Modeling using explanatory numeric variables
 
-How to define the best model? Iterative process.
-Suggestion: after data preparation etc. 
-    Modelling
-  1) Use numeric variables.
-Try to find the best transformation needed to the target variable or the explanatory variables (improve the linear )
-  2) Add factors (only the main effects)
-  3) Add interactions
-  
-MLR has explanatory variables with only numeric 
-When I add factors it becomes GLM 
+## 6.1. Modeling using explanatory numeric variables
 
-# Model: numeric variables
-We build a model with all numeric variables. As livingArea and pricePerSquareFoot perfectly describe the target, we use pricePerSquareFoot because after building both models we get better results for the model using pricePerSquareFoot.
+Once the data were prepared and cleaned, the following steps were carried out to define the **best model**:
 
-Analyzing the variance inflation factor (VIF), we observe that all values are below 5, indicating that the predictors are not highly linearly correlated, so multicollinearity is not a problem.
+1)  Start with the **numeric variables** and check whether any transformations are needed on the target or explanatory variables to improve the linear relationship.
+2)  Add **categorical factors**, including only their main effects, to see how they contribute to the model.
+3)  Include **interactions** between relevant variables to capture combined effects that might improve model performance.
+
+### 1) Model: numeric variables
+
+We start building the model considering all numeric variables except `pricePerSquareFoot`. As `livingArea` and `pricePerSquareFoot` perfectly describe the target, between the two, `livingArea` was selected because its correlation with the target variable is higher (0.72) than that of `pricePerSquareFoot`. Moreover, using `pricePerSquareFoot` would be conceptually inconsistent, since it is mathematically derived from the target variable. Including both variables would also introduce severe multicollinearity, as they are functionally dependent.
+
+To confirm this, two models were created: one including all numeric variables and another excluding `pricePerSquareFoot`. The second model was retained, as the $R^2$ value increased drastically when both variables were included, which is a clear indicator of multicollinearity.
 
 ```{r}
-head(df)
-m0 <- lm(price ~bedrooms+bathrooms+livingArea+n.yearBuilt, data=df)
+# yearBuilt as numerical variable
+m0 <- lm(price ~ bedrooms+bathrooms+livingArea+n.yearBuilt, data=df)
 summary(m0)
-vif(m0)
-
-m0_f <- lm(price ~bedrooms+bathrooms+livingArea+f.yearBuilt, data=df)
-summary(m0_f)
-vif(m0_f)
-# both models have similar AIC and R^2, so we keep the factor yearsBuilt
-
+vif(m0); AIC(m0)
 ```
-We use boxcox transformation and we observe that lambda is near 0.5, so we apply sqrt transformation to our target price.
-
-We compare two models m1 and m2, which are the models with sqrt of price and the other variables, with and without n.yearsBuilt. In the anova test, p-value < 0.05, so we reject the null hypothesis, meaning that the big model is better, so we keep n.yearBuilt. We also check the AIC value, and this is confirmed because AIC for the model 2 is bigger than AIC for the model 1.
-
-bedrooms lambda negatiu, pr < 0.05 -> reject H0 -> relació no es lineal -> transformació -> no transformació
-bathrooms lambda positiu, pr < 0.05 -> reject H0 -> relació no es lineal -> transformació -> sqrt
-livingArea lambda positiu, pr < 0.05 -> reject H0 -> relació no es lineal -> transformació -> 1/3
-
 
 ```{r}
-boxcox(price ~bedrooms+bathrooms+livingArea+n.yearBuilt, data=df) #we see that sqrt is the suitable tranformation
+# yearBuilt as factor
+m0_f <- lm(price ~ bedrooms+bathrooms+livingArea+f.yearBuilt, data=df)
+summary(m0_f)
+vif(m0_f); AIC(m0_f)
+```
+
+From the two models testes, the model with `f.yearBuilt` performed slightly better; it had a higher $R^2$ (0.56 vs. 0.55), a lower AIC, and a smaller residual error. All variables are statistically significant, and the VIF values (all below 5) confirm that there are no multicollinearity issues. Therefore, the model with `f.yearBuilt` was selected.
+
+#### Model transformations
+
+After fitting the initial models, a Box–Cox transformation suggested that a **square root transformation** of the target variable was the most suitable. A Box–Tidwell test was then applied to check the linearity between the transformed target and the predictors. The test indicated that `livingArea` showed a non-linear relationship with `price`, so a square root transformation was also applied to this variable.
+
+Three models were then compared:
+
+-   m1: sqrt(price) \~ bedrooms + bathrooms + livingArea + f.yearBuilt
+-   m2: sqrt(price) \~ bedrooms + bathrooms + livingArea
+-   m3: sqrt(price) \~ bedrooms + bathrooms + sqrt(livingArea) + f.yearBuilt
+
+Model m3 achieved the lowest AIC (52013), the highest R² (0.575), and all VIFs below 5, indicating no multicollinearity. Therefore, m3 was selected.
+
+```{r}
+boxcox(price ~ bedrooms+bathrooms+livingArea+n.yearBuilt, data=df) #we see that sqrt is the suitable tranformation
 boxTidwell(sqrt(price) ~ bedrooms+bathrooms+livingArea+n.yearBuilt, data=df) #we put sqrt to livingArea
 
-m1 <- lm(sqrt(price) ~bedrooms+bathrooms+livingArea+n.yearBuilt, data=df)
-summary(m1)
-vif(m1)
-step(m1)
-AIC(m1)
-par(mfrow=c(2,2))
-plot(m1,id=list(n=Inf,labels=row.names(df)))
-par(mfrow=c(1,1))
+# Model: srt(price)
+m1 <- lm(sqrt(price) ~ bedrooms+bathrooms+livingArea+f.yearBuilt, data=df)
+#summary(m1)
+#vif(m1); step(m1); AIC(m1)
 
-#we remove n.yearBuilt -> higher AIC
+# Model: srt(price) and without f.yearBuilt 
 m2 <- lm(sqrt(price) ~ bedrooms+bathrooms+livingArea, data=df)
-summary(m2)
-vif(m2)
-anova(m2,m1)
-step(m2)
-AIC(m2)
+#summary(m2)
+#vif(m2); step(m2); AIC(m2)
+#anova(m2,m1)
 
-#we use the sqrt to livingArea transformation
-m3_n <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+n.yearBuilt, data=df)
-summary(m3_n)
-vif(m3_n)
-anova(m3_n,m1)
-step(m3_n)
-AIC(m3_n)
-
-#we try to use the factor version of yearBuilt and it yields better results, so we keep this model
-m3 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt, data=df)
+# Model: srt(price) and sqrt(livingArea)
+m3 <- lm(sqrt(price) ~ bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt, data=df)
 summary(m3)
-vif(m3)
+vif(m3); step(m3); AIC(m3)
 anova(m3,m1)
-step(m3)
-AIC(m3)
 ```
-*We keep m3 as the numeric model*. We obtain for it a flatter line in Residuals vs Fitted than with model 1. This means the transformation I(livingArea^(1/3)) corrected the non-linearity that existed in m1.
 
-AIC is also lower 67552.73 < 67707.
+#### Plots of m3 model
 
-QQ plot: There’s a small deviation in the tails (some high-value houses still don’t fit perfectly), but the central part follows the line closely.
+The marginal and residual plots show an approximately linear relationship between the predictors and the transformed response. The residual plots display a random scatter around zero with no clear pattern, indicating homoscedasticity and a good model fit.
 
-Looking at the crPlot, a component + residual plot, it gives information of how well each numeric predictor fits a linear pattern after accounting for the others.
+The Q–Q plot shows a deviation in the tails, but the residuals are approximately normally distributed. The Scale–Location and Residuals vs Fitted plots suggest constant variance across fitted values.
+
+From the Cook’s distance and Residuals vs Leverage plots, a few influential points are detected.
 
 ```{r}
+# Plots model with transformations
 marginalModelPlots(m3, id=list(n=0))
 residualPlots(m3, id=list(n=0))
 avPlots(m3, id=list(n=0))
 crPlots(m3, id=list(n=0))
 influencePlot(m3, id=list(n=3))
+par(mfrow=c(2,2))
 plot(m3)
+par(mfrow=c(1,1))
 plot(allEffects(m3))
 ```
 
+#### Model with bathrooms and bedrooms as factors
 
-# Model with bathrooms and bedrooms as factors
-We try to use bathrooms and bedrooms as factors, obtaining Rsquared of 0.5725 for numeric and Rsquared of 0.5542 for factors, and AIC:
-df      AIC
-m3    6 67529.17
-mf_2  8 67762.35
-So we use the numeric version of the variables.
+We also tested whether treating bedrooms and bathrooms as categorical variables would improve the model. However, the version using them as numeric variables performed better, with a higher $R^2$ (0.5725 vs. 0.5542) and a lower AIC (67529 vs. 67762). Therefore, we kept both variables as numeric.
 
-
-### Starting from the model with all variables 
+### 2) Model: all factors
 
 ```{r}
 # Model with all factors
-m_full <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+pool+homeType, data=df)
+m_full <- lm(sqrt(price) ~ bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+hasGarage+spa+parking+pool+homeType, data=df)
 summary(m_full)
 Anova(m_full)
+```
 
-# We see that pvalues for hasGarage and spa are lower, we try to exclude them from the model
+We see that p-values for hasGarage and spa are lower, we try to exclude them from the model
 
+```{r}
 # Model without hasGarage
-m_full2 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+spa+parking+pool+homeType, data=df)
-summary(m_full2)
-Anova(m_full2)
+m_full2 <- lm(sqrt(price) ~ bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+spa+parking+pool+homeType, data=df)
+#summary(m_full2); Anova(m_full2)
 
 # Model without hasGarage and spa
-m_full3 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+parking+pool+homeType, data=df)
-summary(m_full3)
-Anova(m_full3)
+m_full3 <- lm(sqrt(price) ~ bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+parking+pool+homeType, data=df)
+#summary(m_full3); Anova(m_full3)
 
 # Model without spa
-m_full4 <- lm(sqrt(price) ~bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+hasGarage+parking+pool+homeType, data=df)
-summary(m_full4)
-Anova(m_full4)
-
-# AICs are similar, so we keep the simplest model
-        #df      AIC
-#m_full  20 67250.86
-#m_full2 19 67257.26
-#m_full3 18 67267.14
-#m_full4 19 67260.52
+m_full4 <- lm(sqrt(price) ~ bedrooms+bathrooms+sqrt(livingArea)+f.yearBuilt+levels+garageSpaces+hasGarage+parking+pool+homeType, data=df)
+#summary(m_full4); Anova(m_full4)
 
 m_step <- step(m_full3, direction = "both", trace = TRUE)
 summary(m_step)
 AIC(m_step)
+```
 
+After adding the categorical variables related to the house features, several models were compared. All of them showed similar performance, with $R^2$ around 0.59. The simplest model (m_full3), which excludes hasGarage and spa, was selected because it achieves almost the same explanatory power (Adjusted $R^2=0.594$) as the more complex versions, while keeping a lower AIC (67513) and fewer parameters.
+
+All predictors in the final model are statistically significant (p < 0.05), and the VIF values remain below 5, confirming that there is no multicollinearity.
+
+```{r}
 marginalModelPlots(m_full3, id=list(n=0))
 residualPlots(m_full3, id=list(n=0))
 avPlots(m_full3, id=list(n=0))
@@ -185,78 +169,71 @@ par(mfrow=c(2,2))
 plot(m_full3)
 par(mfrow=c(1,1))
 ```
-### Interactions
+
+The Q–Q plot reveals slight deviations in the tails, but the residuals are approximately normally distributed. A few observations appear as influential in the Cook’s distance and Residuals vs Leverage plots, which will be later assessed.
+
+### 3) Interactions
+
+To check for potential nonlinear relationships between predictors, several interaction models were tested. Each main variable was combined with the others. The **step()** function was used to identify significant interactions based on AIC minimization.
 
 ```{r}
 md1 <- lm(sqrt(price)~bathrooms*(f.yearBuilt+levels+garageSpaces+parking+pool+homeType),data=df)
-# summary(md1)
-step(md1)
-# with the step function we conclude that the meaningful interactions with bathroom are
+#summary(md1); step(md1)
 # bathrooms:levels
 # bathrooms:garageSpaces
 # bathrooms:parking
 # bathrooms:homeType
 
 md2 <- lm(sqrt(price)~bedrooms*(f.yearBuilt+levels+garageSpaces+parking+pool+homeType),data=df)
-# summary(md2)
-step(md2)
+#summary(md2); step(md2)
 # bedrooms:f.yearBuilt
 # bedrooms:levels
 # bedrooms:garageSpaces
 # bedrooms:pool
 # bedrooms:homeType
 
-md3 <- lm(sqrt(price)~livingArea*(f.yearBuilt+levels+garageSpaces+parking+pool+homeType),data=df)
-# summary(md3)
+md3 <- lm(sqrt(price)~sqrt(livingArea)*(f.yearBuilt+levels+garageSpaces+parking+pool+homeType),data=df)
+summary(md3); 
 step(md3)
-# livingArea:f.yearBuilt
-# livingArea:levels
-# livingArea:garageSpaces
-# livingArea:parking
-# livingArea:homeType
+# sqrt(livingArea):f.yearBuilt
+# sqrt(livingArea):parking
+# sqrt(livingArea):homeType
 
 md4 <- lm(sqrt(price)~f.yearBuilt*(levels+garageSpaces+parking+pool+homeType),data=df)
-# summary(md4)
-step(md4)
-
-#f.yearBuilt:levels
+#summary(md4); step(md4)
+# f.yearBuilt:levels
 # f.yearBuilt:garageSpaces
 # f.yearBuilt:parking 
 # f.yearBuilt:pool
 # f.yearBuilt:homeType
 
 md5 <- lm(sqrt(price)~levels*(f.yearBuilt+garageSpaces+parking+pool+homeType),data=df)
-# summary(md5)
-step(md5)
+#summary(md5); step(md5)
 # levels:f.yearBuilt
 # levels:garageSpaces
 # levels:homeType
 
 md6 <- lm(sqrt(price)~garageSpaces*(f.yearBuilt+levels+parking+pool+homeType),data=df)
-# summary(md6)
-step(md6)
+#summary(md6); step(md6)
 # garageSpaces:f.yearBuilt
 # garageSpaces:levels
 # garageSpaces:pool
 # garageSpaces:homeType
 
 md7 <- lm(sqrt(price)~parking*(f.yearBuilt+levels+garageSpaces+pool+homeType),data=df)
-# summary(md7)
-step(md7)
+#summary(md7); step(md7)
 # parking:f.yearBuilt
 # parking:homeType
 
 md8 <- lm(sqrt(price)~pool*(f.yearBuilt+levels+garageSpaces+parking+homeType),data=df)
-# summary(md8)
-step(md8)
+#summary(md8); step(md8)
 # pool:f.yearBuilt
 # pool:garageSpaces
 # pool:parking
 # pool:homeType
 
 md9 <- lm(sqrt(price)~homeType*(f.yearBuilt+levels+garageSpaces+parking+pool),data=df)
-# summary(md9)
-step(md9)
+#summary(md9); step(md9)
 # homeType:f.yearBuilt
 # homeType:levels
 # homeType:garageSpaces
@@ -293,20 +270,23 @@ model <- lm(
     pool:homeType,
   data = df
 )
-
 #summary(model)
-# Anova(model)
+Anova(model)
 ```
-### FINAL MODEL
+
+The final model includes several significant interaction effects, such as: bedrooms:f.yearBuilt, bedrooms:homeType, f.yearBuilt:livingArea, f.yearBuilt:levels, f.yearBuilt:garageSpaces, f.yearBuilt:parking, f.yearBuilt:pool, f.yearBuilt:homeType, garageSpaces:pool, and parking:pool.
+
+According to the ANOVA table, these interactions were statistically significant (p < 0.05). Adding these terms improved the model’s explanatory power, increasing the Adjusted $R^2$ from 0.59 to 0.62.
+
+## 6.2. FINAL MODEL
 
 ```{r}
-
 model_reduced <- lm(
   sqrt(price) ~ bedrooms + bathrooms + sqrt(livingArea) + f.yearBuilt +
     levels + garageSpaces + parking + pool + homeType +
     bedrooms:f.yearBuilt +
     bedrooms:homeType +
-    f.yearBuilt:livingArea +
+    f.yearBuilt:sqrt(livingArea) +
     f.yearBuilt:levels +
     f.yearBuilt:garageSpaces +
     f.yearBuilt:parking +
@@ -315,46 +295,35 @@ model_reduced <- lm(
     garageSpaces:pool,
   data=df
 )
-
 summary(model_reduced)
 ```
 
 ```{r}
 marginalModelPlots(model_reduced, id=list(n=0))
-#residualPlots(model_reduced, id=list(n=0))
-avPlots(model_reduced, id=list(n=0))
-#crPlots(model_reduced, id=list(n=0))
+residualPlots(model_reduced, id=list(n=0))
 influencePlot(model_reduced, id=list(n=3))
 par(mfrow=c(2,2))
 plot(model_reduced)
 par(mfrow=c(1,1))
 ```
 
-### Influent data assesment
+The Q–Q plot indicates that the residuals are approximately normally distributed, although some deviations can be seen in the tails. The Scale–Location and Residuals vs Fitted plots suggest that the variance is relatively constant across fitted values, with no major heteroscedasticity detected. The Cook’s distance plot highlights a few observations with high leverage or influence, which could affect the stability of the model. Therefore, an assessment of influential data will be carried out to improve the model’s performance.
 
-We remove data with high leverage, high studentized residuals and high Coo's distance, this is, common observations (intersection) in llres and llhat.
+## 6.3. Influent data assesment
 
-We also use the boxplot of Cook's distance.
+To assess influential observations, studentized residuals and leverage values were examined.
+
+Observations 4222 and 4754 were identified as influential, as they presented both high residuals and high leverage values. Additionally, they were also labelled as multivariate outliers. The Cook’s distance boxplot confirmed that one of these points was notably distant from the rest. Therefore, these observations were removed to evaluate whether their exclusion improves the model’s stability and performance.
+
 ```{r}
 llres <- which(abs(rstudent(model_reduced)) > 3)
-llhat <- which(hatvalues(model_reduced) > 3 * length(coef(model_reduced)) / nrow(df))
-common_outliers <- intersect(llres, llhat)
+llhat <- which(hatvalues(model_reduced) > 3*length(coef(model_reduced))/nrow(df))
+common_outliers <- intersect(llres, llhat); common_outliers
 df[common_outliers, ]
-
-#df <- df[-common_outliers, ]
-
-llcoo<-Boxplot(cooks.distance(model_reduced), id=list(n=10,labels=row.names(df)))
-abline(h=4/(nrow(df)-length(coef(model_reduced))))
-
-# we do not use this criterium because sample is large
-llCH<-which(cooks.distance(model_reduced) > 4/(nrow(df)-length(coef(model_reduced))));llCH  #278
-
-influencePlot(model_reduced)
-df[llres,]
-ll<-which(row.names(df) %in% c("611", "1300"));ll
-
-df<-df[-ll,]
+llcoo <- Boxplot(cooks.distance(model_reduced), id=list(n=10,labels=row.names(df)))
+df <- df[-common_outliers,] # remove influent data
 ```
+
 We fit the model again without the 2 outliers.
 
 ```{r}
@@ -373,61 +342,32 @@ model_reduced_2 <- lm(
   data=df
 )
 
-#summary(model_reduced_2)
+summary(model_reduced_2)
 ```
 
-We compute the influential data again to see if some remain. We observe that 4291 also has high lat value and high studentized residuals, as well as high Cook's distance, so we remove it.
+We compute the influential data again to check if any influential observations remain. No additional points were detected, confirming that the model is now stable and not affected by outliers.
 
 ```{r}
 llres <- which(abs(rstudent(model_reduced_2)) > 3)
 llhat <- which(hatvalues(model_reduced_2) > 3 * length(coef(model_reduced_2)) / nrow(df))
-common_outliers <- intersect(llres, llhat)
-df[common_outliers, ]
-
-#df <- df[-common_outliers, ]
-
-llcoo<-Boxplot(cooks.distance(model_reduced_2), id=list(n=10,labels=row.names(df)))
-influencePlot(model_reduced_2)
-df[llres,]
-ll<-which(row.names(df) %in% c("4291"));ll
-
-df<-df[-ll,]
+common_outliers <- intersect(llres, llhat); common_outliers
+llcoo <- Boxplot(cooks.distance(model_reduced_2), id=list(n=10,labels=row.names(df)))
 ```
 
-Our final model without the influential data:
-```{r}
+After removing 2 influential data, our model achieves a $R^2=0.616$.
 
-model_reduced_3 <- lm(
-  sqrt(price) ~ bedrooms + bathrooms + sqrt(livingArea) + f.yearBuilt +
-    levels + garageSpaces + parking + pool + homeType +
-    bedrooms:f.yearBuilt +
-    bedrooms:homeType +
-    f.yearBuilt:livingArea +
-    f.yearBuilt:levels +
-    f.yearBuilt:garageSpaces +
-    f.yearBuilt:parking +
-    f.yearBuilt:pool +
-    f.yearBuilt:homeType +
-    garageSpaces:pool,
-  data=df
-)
+## 6.4. Model validation
+The final model is validated through diagnostic plots after removing the influential data. The Marginal Model Plots show an improvement compared to the initial version. In particular, the bedrooms relationships now align more closely with the model line, indicating that the fitted values capture the observed trend more accurately. The relationship between sqrt(livingArea) and the target remains well described, with the model line closely following the data pattern.
 
-summary(model_reduced_3)
-```
+The Residuals vs Fitted plot exhibits a random distribution of residuals around zero, suggesting that the linearity and homoscedasticity assumptions hold. The Scale–Location plot confirms this, as the spread of residuals is relatively constant across fitted values. The Q–Q plot shows a deviation at the tails, but overall the residuals are approximately normally distributed.
 
-After removing 3 influential data, our model achieves a R^2 of 0.6207.
-
-### Model validation
+The Residuals vs Leverage and Cook’s Distance plots indicate that no additional influential points remain after removing observations 4222 and 4754.
 
 ```{r}
-marginalModelPlots(model_reduced_3, id=list(n=0))
-#residualPlots(model_reduced_3, id=list(n=0))
-avPlots(model_reduced_3, id=list(n=0))
-#crPlots(model_reduced_3, id=list(n=0))
-influencePlot(model_reduced_3, id=list(n=3))
+marginalModelPlots(model_reduced_2, id=list(n=0))
+avPlots(model_reduced_2, id=list(n=0))
+influencePlot(model_reduced_2, id=list(n=3))
 par(mfrow=c(2,2))
-plot(model_reduced_3)
+plot(model_reduced_2)
 par(mfrow=c(1,1))
 ```
-```
-
