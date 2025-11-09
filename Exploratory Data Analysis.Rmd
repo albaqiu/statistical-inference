@@ -136,7 +136,7 @@ After analyzing all duplicate groups, the conclusions we have reached are as fol
   *One observation time, price, pricePerSquareFoot, description, garageSpaces, hasGarage"
 ```{r}
 # Before duplicate removal
-length(df)
+nrow(df)
 ```
   
 
@@ -213,7 +213,7 @@ any(duplicated(df$id))
 
 ```{r}
 # After duplicate removal
-length(df)
+nrow(df)
 any(duplicated(df$id))
 ```
 
@@ -252,7 +252,7 @@ summary(df$livingArea == df$livingAreaValue)
 summary(df$livingArea == df$buildingArea)
 ```
 
-Based on the data summary, several variables will be removed due to limited informational value or redundancy:
+Based on both the data summary and the detailed inspection of individual variables, several features will be removed due to limited informational value, redundancy, or detected inconsistencies:
 
 - `X.1`, `X`, `id`, and `time` will be removed as they do not contribute meaningful information for modeling.
 
@@ -270,6 +270,11 @@ Based on the data summary, several variables will be removed due to limited info
 
 - `streetAddress` will also be removed, given that it uniquely identifies each property without offering generalizable information.
 
+- `cityId` variable, after analyzing it, shows inconsistencies, with several cities associated with multiple different IDs (for example, Atlanta has 21 distinct codes). Since `cityId` is a redundant and unreliable encoding of the city information, it will be removed from the dataset.
+
+- `city` will not be included in the model, as it represents a highly granular categorical variable with many levels, which could lead to overfitting and complicate model interpretation without providing significant predictive value.
+
+- `event` will not be included in the model, as it primarily reflects the listing status rather than intrinsic property features. Moreover, its extreme imbalance (less than 1% of records labeled as “Sold”) limits its usefulness for predictive modeling.
 
 ### 2.1.1. Target variable: `Price`
 The first variable to be analyzed is Price, as it is a numerical variable representing the target of the analysis. 
@@ -588,52 +593,17 @@ hist(df$bedrooms, breaks = 30, freq = F, main="Histogram of bedrooms", xlab = "b
 curve(dnorm(x, mean(df$bedrooms, na.rm=TRUE), sd(df$bedrooms, na.rm=TRUE)), add = TRUE, col = "red")
 ```
 
-
-We remove the observation with 14 bedrooms, as it is an extreme observation that could negatively affect the model.
-
-```{r}
-# Eliminate observation with 14 bedrooms
-df <- df[df$bedrooms != 14, ]
-```
-
-As can be seen in the histogram, some observations have 0 bedrooms. Just as `bathrooms` variable, these values are replaced with NA to indicates missing data and then later we will impute the variable using the **MICE** algorithm. 
+As shown in the histogram, a few observations have 0 bedrooms. After checking the description variable, we found that while a few listings explicitly mention having no bedrooms, most do not provide this information. Therefore, we consider these cases as missing data and replace the 0 values with NA, so that the variable can later be imputed using the **MICE** algorithm. 
 
 ```{r}
-# Replace impossible values (0 bedrooms) with NA
-df$bedrooms[df$bedrooms == 0] <- NA
-# We check if it was applied correctly
-sum(is.na(df$bedrooms))
-```
-
-```{r}
-summary(df)
+df$bedrooms[df$bedrooms == 0] <- NA # Replace impossible values (0 bedrooms) with NA
+sum(is.na(df$bedrooms)) # We check if it was applied correctly
 ```
 
 
 ### 2.1.3. Categorical variables
 
-
 #### Variable `event`
-```{r}
-# Frequency table
-table(df$event)
-
-# Proportions
-prop.table(table(df$event))
-
-# Barplot
-barplot(table(df$event), main = "Barplot of event", las = 2, col = "lightblue")
-```
-Since `event` primarily indicates listing status and not intrinsic property characteristics, it may not contribute significantly to price prediction. It's strongly imbalanced and it could be removed later.
-
-```{r}
-df$event_status <- as.character(df$event)
-
-df$event_status[df$event_status %in% c("Listed for sale", "Pending sale", "Price change", "Listing removed")] <- "Active"
-df$event_status[df$event_status == "Sold"] <- "Sold"
-df$event_status <- factor(df$event_status)
-table(df$event_status)
-```
 
 Although the `event` variable was simplified into “Active” and “Sold,” the “Sold” category represents less than 1% of the dataset (49 out of 5465 observations). 
 
@@ -721,10 +691,6 @@ df$levels = factor(df$levels)
 length(unique(df$levels))
 barplot(table(df$levels), main = "Barplot of levels", col="pink")
 sum(is.na(df$levels))
-```
-We evaluate the number of unique values in the strings to unify them. 
-```{r, include=FALSE}
-unique(df$levels)
 ```
 To simplify the levels variable, some in between levels like the "one and one half" level was reassigned based on its similarity in average price to other groups. After comparing mean prices across levels, it was grouped with "two" to reduce sparsity and improve model interpretability. The same happens with "zero", which was grouped with "one".
 
@@ -870,11 +836,9 @@ As we said before, these variables are redundant, as they simply encode the cate
 
 Variables `hasPetsAllowed` and `event` will be removed because of the big class imbalance.
 
-Variable `year.built` is also removed, and we will consider the `n.yearBuilt`variable (years since house has been built).
-
 ```{r}
 # Columns removed after initial analysis
-df2 <- df[,-c(1:12, 15:24, 26, 29, 37, 39, 43)]
+df2 <- df[,-c(1:12, 15:24, 26, 29, 37, 39)]
 ```
 
 Finally, all the variables removed from the dataset were excluded due to low informational value, redundancy, or lack of variability. The following variables were discarded:
@@ -884,14 +848,14 @@ Finally, all the variables removed from the dataset were excluded due to low inf
 - id (3)
 - stateId (4)
 - countyId (5)
-- cityId (6)
-- country (7) ----
+- cityId 
+- country (7) 
 - datePostedString (8)
 - is_bankOwned (9)
 - is_forAuction (10)
 - event (11)
 - time (12)
-- city (15) ----
+- city (15)
 - state (16)
 - yearBuilt (17)
 - streetAddress (18)
@@ -899,26 +863,20 @@ Finally, all the variables removed from the dataset were excluded due to low inf
 - longitude (20)
 - latitude (21)
 - hasBadGeocode (22)
-- description (23) ---
+- description (23) 
 - currency (24)
 - livingAreaValue (26)
 - buildingArea (29)
 - hasPetsAllowed (37)
 - county (39)
-- eventStatus (43)
 
 The dataset obtained after the preprocessing contains the following variables:
 - 6 numerical variables: `price`, `pricePerSquareFoot`, `n.yearBuilt`, `livingArea`, `bathrooms`, `bedrooms`.
 - 10 categorical variables: `parking`, `garageSpaces`, `hasGarage`, `levels`, `pool`, `spa`, `isNewConstruction`, `homeType`, `f.price`, `f.yearBuilt`.
 
 ```{r}
-# Numerical variables:
-dfnum <- df2[,c(1:5, 18)]
-
-# Categorical variables:
-dfcat <- df2[,c(6:13, 17, 19)]
-
-# Outliers
+dfnum <- df2[,c(1:5, 18)] # Numerical variables
+dfcat <- df2[,c(6:13, 17, 19)] # Categorical variables
 dfout <- df2[,c(14:16)]
 
 summary(dfnum)
@@ -990,40 +948,13 @@ To validate the results of the imputation, we compare the quantiles before and a
 They have not changed.
 ```{r}
 any(is.na(df3))
-#VALIDATION
+
 quantile(df$bathrooms, probs=seq(0,1,by=0.1), na.rm=T)
 quantile(df3$bathrooms, probs=seq(0,1,by=0.1), na.rm=F)
 
 quantile(df$bedrooms, probs=seq(0,1,by=0.1), na.rm=T)
 quantile(df3$bedrooms, probs=seq(0,1,by=0.1), na.rm=F)
 ```
-
-#### Variable `bathrooms`: cat
-Bathrooms variable is a discrete numerical variable. To simplify the analysis and prepare it for modeling, we created a categorical variable with three levels: 1–2, 3–4, and 5 or more bathrooms.
-
-```{r}
-# convert to factor
-df3$f.bathrooms <- cut(df3$bathrooms,
-                      breaks = c(0, 2, 4, Inf),
-                      labels = c("1-2", "3-4", "5 or more"),
-                      right = TRUE)
-
-barplot(table(df3$f.bathrooms), main = "Barplot of f.bathrooms", col="lightblue")
-```
-
-#### Variable `bedrooms`: cat
-Bedrooms variable is a discrete numerical variable. To simplify the analysis and prepare it for modeling, we created a categorical variable with 3 levels: 1–2, 3–4, 5 or more bedrooms.
-
-```{r}
-# Convert to factor
-df3$f.bedrooms <- cut(df3$bedrooms,
-                      breaks = c(0, 2, 4, Inf),
-                      labels = c("1-2", "3-4", "5 or more"),
-                      right = TRUE)
-
-barplot(table(df3$f.bedrooms), main = "Barplot of f.bedrooms", col="lightblue")
-```
-
 
 ## 2.3. Detection of outliers
 ### 2.3.1. Univariate outliers
@@ -1050,6 +981,9 @@ total_mild_outliers <- unique(c(
 ))
 
 dfout$mild_uout[total_mild_outliers] <- 1
+
+df3$mild_uout <- dfout$mild_uout
+df3$extr_uout <- dfout$extr_uout
 ```
 
 
@@ -1087,7 +1021,7 @@ dfout$mout <- as.numeric(as.character(dfout$mout))
 dfout$mout[ll] <- 1
 df3$mout <- dfout$mout
 
-df3 <- df3[!(rownames(df3) %in% '1715'),]
+df3 <- df3[!(rownames(df3) %in% c('1715','4157')),]
 ```
 
 
@@ -1127,7 +1061,7 @@ df_prof <- df3[, !(names(df3) %in% vars_to_remove)]
 ```
 
 ```{r}
-# Profiling: Analysis with price as numerical
+# Analysis with price as numerical
 library(FactoMineR)
 res.con <- condes(df_prof, which(names(df_prof) == 'price'))
 
@@ -1165,7 +1099,7 @@ res.con$category
   condos, no garage, and older homes pull prices down.
 
 ```{r}
-# Profiling: Analysis with price as a factor
+# Analysis with price as a factor
 res.cat <- catdes(df_prof, which(names(df_prof) == 'f.price'))
 
 res.cat$quanti.var
@@ -1216,7 +1150,7 @@ in any model aiming to explain or forecast `price`.
 write.csv(df4, "House_Clean3.csv", row.names = FALSE)
 ```
 
-```{r}
+```{r, include=FALSE}
 # Boxplot
 boxplot(price ~ levels, data = df4,
         main = "Price ~ Levels",
@@ -1245,12 +1179,6 @@ boxplot(price ~ isNewConstruction, data = df4,
 boxplot(price ~ f.yearBuilt, data = df4,
         main = "Price ~ f.yearBuilt",
         col = rainbow(length(unique(df4$f.yearBuilt))))
-boxplot(price ~ f.bathrooms, data = df4,
-        main = "Price ~ f.bathrooms",
-        col = rainbow(length(unique(df4$f.bathrooms))))
-boxplot(price ~ f.bedrooms, data = df4,
-        main = "Price ~ f.bedrooms",
-        col = rainbow(length(unique(df4$f.bedrooms))))
 ```
 
 
