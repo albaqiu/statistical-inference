@@ -6,6 +6,18 @@ output:
   html_document: default
 date: "2025-10-08"
 ---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  message    = FALSE,   # oculta mensajes
+  warning    = FALSE,   # oculta warnings
+  fig.align  = "center",
+  fig.width  = 4.5,       # tamaño base de los gráficos (en pulgadas)
+  fig.height = 3,
+  dpi        = 120,
+  out.width  = "70%",   # reduce tamaño en la página
+  fig.show   = "hold"   # agrupa varias figuras del chunk en el mismo bloque
+)
+```
 
 ```{r}
 # Clear plots
@@ -576,6 +588,14 @@ hist(df$bedrooms, breaks = 30, freq = F, main="Histogram of bedrooms", xlab = "b
 curve(dnorm(x, mean(df$bedrooms, na.rm=TRUE), sd(df$bedrooms, na.rm=TRUE)), add = TRUE, col = "red")
 ```
 
+
+We remove the observation with 14 bedrooms, as it is an extreme observation that could negatively affect the model.
+
+```{r}
+# Eliminate observation with 14 bedrooms
+df <- df[df$bedrooms != 14, ]
+```
+
 As can be seen in the histogram, some observations have 0 bedrooms. Just as `bathrooms` variable, these values are replaced with NA to indicates missing data and then later we will impute the variable using the **MICE** algorithm. 
 
 ```{r}
@@ -584,19 +604,12 @@ df$bedrooms[df$bedrooms == 0] <- NA
 # We check if it was applied correctly
 sum(is.na(df$bedrooms))
 ```
-```{r}
-summary(df)
-```
-We remove the observation with 14 bedrooms, as it is an extreme observation that could negatively affect the model.
-
-```{r}
-# Eliminate observation with 14 bedrooms
-df <- df[df$bedrooms != 14, ]
-```
 
 ```{r}
 summary(df)
 ```
+
+
 ### 2.1.3. Categorical variables
 
 
@@ -932,16 +945,13 @@ In the dataset there are missing values in variables:
 - Levels
 
 ```{r}
-summary(df2)
 colSums(is.na(df2))
 na_per_row <- rowSums(is.na(df2))
 table(na_per_row)
-
-df2[rowSums(is.na(df2)) > 1, ]
 ```
 The problem is that in 11 observations, there is a missing value for both bedrooms and bathrooms. We will impute both variables. 
 
-```{r}
+```{r, results="hide"}
 library(mice)    
 
 vars <- c(
@@ -971,7 +981,6 @@ imp <- mice(
 )
 
 completed_df <- complete(imp)
-summary(completed_df)
 
 vars_no_impute <- setdiff(names(df2), vars)
 df3 <- cbind(completed_df, df2[vars_no_impute])
@@ -980,6 +989,7 @@ To validate the results of the imputation, we compare the quantiles before and a
 
 They have not changed.
 ```{r}
+any(is.na(df3))
 #VALIDATION
 quantile(df$bathrooms, probs=seq(0,1,by=0.1), na.rm=T)
 quantile(df3$bathrooms, probs=seq(0,1,by=0.1), na.rm=F)
@@ -1060,11 +1070,18 @@ res.mout$cutoff
 abline(h=res.mout$cutoff,col="red",lwd=2)
 abline(v=res.mout$cutoff,col="red",lwd=2)
 text(res.mout$md,res.mout$rd,label=row.names(df),cex=0.5)
+```
 
-ll <- which((res.mout$md>res.mout$cutoff) & (res.mout$rd>res.mout$cutoff)); ll # observations with md and rd > cutoff
 
+```{r, results='hide'}
+ll <- which((res.mout$md>res.mout$cutoff) & (res.mout$rd>res.mout$cutoff)) # observations with md and rd > cutoff
+```
+
+
+```{r}
 length(ll)
 ```
+
 ```{r}
 dfout$mout <- as.numeric(as.character(dfout$mout))
 dfout$mout[ll] <- 1
